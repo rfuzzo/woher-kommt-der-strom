@@ -91,6 +91,8 @@ from" is borrowed from [holadelej.hu](https://holadelej.hu/), which does this
 for Hungary. This is an independent implementation for Austria — no design,
 markup or copy was taken from it. If you like this, go look at theirs.
 
+Built with the help of [Claude Code](https://claude.com/claude-code).
+
 ## Possible next steps
 
 - Hydro reservoir levels and river flow from [ehyd.gv.at](https://ehyd.gv.at/)

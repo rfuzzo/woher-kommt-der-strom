@@ -7,6 +7,7 @@
 // Stack order = colour order. Validated as a set against the CVD, normal-vision
 // and lightness checks in both modes; reordering invalidates that.
 const ORDER = ['hydro', 'fossil', 'wind', 'solar', 'pumped', 'biomass', 'other'];
+const REPO = 'https://github.com/rfuzzo/woher-kommt-der-strom';
 const COLOR = k => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim();
 
 const I18N = {
@@ -38,6 +39,7 @@ const I18N = {
     flowNote: 'Physikalische Flüsse an den Kuppelstellen, nicht Handelsgeschäfte. Strom fließt auch durch Österreich hindurch, ohne hier verbraucht zu werden.',
     sources: 'Erzeugung, Last, Grenzflüsse und Preis: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), gespeist aus <a href="https://transparency.entsoe.eu/">ENTSO-E</a> und <a href="https://www.apg.at/">APG</a>.',
     credit: 'Idee inspiriert von <a href="https://holadelej.hu/">holadelej.hu</a> (Ungarn) — eigenständig gebaut, ohne Übernahme von Gestaltung oder Text.',
+    colophon: 'Quellcode auf <a href="' + REPO + '">GitHub</a> — offen und nachbaubar. Gebaut mit Unterstützung von <a href="https://claude.com/claude-code">Claude Code</a>.',
     err: 'Die Daten konnten nicht geladen werden.',
     hours: 'h', mins: 'min'
   },
@@ -69,6 +71,7 @@ const I18N = {
     flowNote: 'Physical flows across the interconnectors, not commercial trades. Power also transits Austria without being consumed here.',
     sources: 'Generation, load, cross-border flows and price: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), fed from <a href="https://transparency.entsoe.eu/">ENTSO-E</a> and <a href="https://www.apg.at/">APG</a>.',
     credit: 'Concept inspired by <a href="https://holadelej.hu/">holadelej.hu</a> (Hungary) — built independently, with no design or copy taken from it.',
+    colophon: 'Source on <a href="' + REPO + '">GitHub</a> — open, and rebuildable. Built with the help of <a href="https://claude.com/claude-code">Claude Code</a>.',
     err: 'The data could not be loaded.',
     hours: 'h', mins: 'min'
   }
@@ -358,6 +361,7 @@ function renderFooter() {
   document.getElementById('licLine').textContent =
     [DATA.license, DATA.price && DATA.price.license].filter(Boolean).join(' · ');
   document.querySelector('[data-i18n="credit"]').innerHTML = t('credit');
+  document.getElementById('colophon').innerHTML = t('colophon');
 }
 
 /* ── wiring ───────────────────────────────────────────────────────────── */
