@@ -304,6 +304,61 @@ h2 {
 
 .plotwrap { position: relative; }
 
+/* ── trade (24 h import / export) ───────────────────────────────────── */
+
+.tradestats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px 26px;
+  margin-bottom: 20px;
+}
+
+.tstat .k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.tstat .v {
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  margin-top: 2px;
+}
+
+.tstat .v small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+.tstat .d { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+
+.subhead {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--ink-muted);
+  font-weight: 600;
+  margin: 26px 0 12px;
+}
+
+.sparks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px 22px;
+}
+
+.spark .sh {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.spark .sh .nm { color: var(--ink); }
+.spark .sh .val { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.spark svg { width: 100%; display: block; }
+
 /* ── flows ──────────────────────────────────────────────────────────── */
 
 .flows { display: flex; flex-direction: column; gap: 3px; }

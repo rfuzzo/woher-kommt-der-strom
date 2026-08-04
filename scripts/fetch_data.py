@@ -195,12 +195,22 @@ def main() -> None:
         fscale = to_mw(flows)
         ftimes, fcols = columns(flows)
         names = {s["id"]: s["name"] for s in flows["series"]}
+
+        # Cross-border data runs about an hour further behind than generation,
+        # so it gets its own window and its own timestamp rather than being
+        # forced onto the generation clock.
+        f_until = flows.get("available_until")
+        f_now = len(ftimes) - 1
+        if f_until:
+            until_ts = int(datetime.fromisoformat(f_until).timestamp())
+            f_now = max((i for i, t in enumerate(ftimes) if t <= until_ts), default=f_now)
+
         rows = []
         for sid, vals in fcols.items():
             if sid == "sum":
                 continue
             # Walk back to the newest published value for this border.
-            for i in range(len(vals) - 1, -1, -1):
+            for i in range(min(f_now, len(vals) - 1), -1, -1):
                 if vals[i] is not None:
                     rows.append({"name": names.get(sid, sid),
                                  "mw": r1(float(vals[i]) * fscale),
@@ -208,6 +218,44 @@ def main() -> None:
                     break
         rows.sort(key=lambda r: -abs(r["mw"]))
         out["flows"] = rows
+
+        fstep = ftimes[1] - ftimes[0] if len(ftimes) > 1 else 900
+        fspan = int(HOURS_BACK * 3600 / fstep)
+        flo = max(0, f_now - fspan + 1)
+        fwin = list(range(flo, f_now + 1))
+
+        net = clean(fcols.get("sum"), len(ftimes), fscale)
+        net_win = [net[i] for i in fwin]
+
+        # Load is on the generation clock; match by timestamp so the
+        # import-share figures compare like with like.
+        load_at = {times[i]: load[i] for i in range(n)}
+        shares = [(net[i] / load_at[ftimes[i]] * 100)
+                  for i in fwin
+                  if net[i] > 0 and load_at.get(ftimes[i], 0) > 0]
+
+        peak_imp = max(net_win, default=0.0)
+        peak_exp = min(net_win, default=0.0)
+        importing = sum(1 for v in net_win if v > 0)
+
+        out["trade"] = {
+            "at": ftimes[f_now],
+            "t": [ftimes[i] for i in fwin],
+            "net": [r1(v) for v in net_win],
+            "countries": [
+                {"name": names.get(sid, sid),
+                 "series": [r1(v) for v in
+                            (lambda c: [c[i] for i in fwin])(clean(vals, len(ftimes), fscale))]}
+                for sid, vals in fcols.items() if sid != "sum"
+            ],
+            "now": r1(net[f_now]),
+            "peakImport": r1(peak_imp),
+            "peakExport": r1(peak_exp),
+            "peakImportShare": r1(max(shares)) if shares else None,
+            "importingSteps": importing,
+            "steps": len(fwin),
+        }
+        out["trade"]["countries"].sort(key=lambda c: -max(abs(v) for v in c["series"]))
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
         print(f"WARNING: cross-border flows unavailable: {e}", file=sys.stderr)
 

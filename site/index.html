@@ -50,8 +50,24 @@
       <p class="note" data-i18n="dayNote"></p>
     </section>
 
+    <section id="tradeSection">
+      <h2 data-i18n="tradeTitle">Import und Export · 24 Stunden</h2>
+      <div class="tradestats" id="tradeStats"></div>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="tradeChart" role="img"></svg></div>
+        <div class="tip" id="tradeTip"></div>
+      </div>
+      <p class="note" data-i18n="tradeNote"></p>
+      <h3 class="subhead" data-i18n="perCountry">Je Nachbarland</h3>
+      <div class="sparks" id="sparks"></div>
+      <details>
+        <summary data-i18n="tableToggle">Werte als Tabelle</summary>
+        <div id="tradeTable"></div>
+      </details>
+    </section>
+
     <section id="flowSection">
-      <h2 data-i18n="flowTitle">Grenzüberschreitende Flüsse</h2>
+      <h2 data-i18n="flowTitle">Grenzüberschreitende Flüsse · jetzt</h2>
       <div class="flowkey">
         <span><i style="background:var(--import)"></i><span data-i18n="importing">Import nach Österreich</span></span>
         <span><i style="background:var(--export)"></i><span data-i18n="exporting">Export aus Österreich</span></span>
