@@ -59,15 +59,45 @@ lag is in the source rather than here. The page shows the data timestamp and
 the publication lag instead of implying it is current. The river panel is the
 exception and carries its own, much fresher timestamp.
 
-### The import mix is attribution, not tracing
+### The import mix is attribution, not tracing — and that was checked
 
 Each border flow is attributed to the exporting country's own generation mix
-at that moment. This is the standard cheap approximation, and it has a real
-limitation: it ignores transit. Power that reaches Austria from Czechia may
-have originated in Poland; German power may be French nuclear. Getting true
-origin requires flow-tracing across the whole European network, which this
-does not attempt. The page states this in plain language rather than burying
-it.
+at that moment. This is the cheap approximation: it ignores transit, so power
+reaching Austria from Czechia may in fact have originated in Poland.
+
+Rather than leave that as an unquantified hand-wave, `scripts/check_import_mix.py`
+implements proper flow-tracing (average participation — Bialek / Tranberg) over
+a 16-country network and compares the two. Solving
+
+```
+T_i · c_i = P_i + Σ_j F_ji · c_j
+```
+
+for every zone propagates origin across the network, so Austria's imports are
+weighted by its neighbours' *traced* mixes instead of their raw production.
+
+Result on a sample day:
+
+| group | attributed | traced | delta |
+|---|---:|---:|---:|
+| fossil | 32.8 % | 34.5 % | +1.6 |
+| nuclear | 21.4 % | 18.8 % | −2.6 |
+| wind | 8.2 % | 9.6 % | +1.5 |
+| solar | 21.3 % | 21.1 % | −0.1 |
+| hydro | 8.1 % | 7.9 % | −0.2 |
+| **fossil + nuclear** | **54.2 %** | **53.3 %** | **−1.0** |
+
+About one percentage point on the headline. Austria's imports come
+overwhelmingly from Czechia and Germany, both large producers whose own import
+share is small next to their production, so the dilution is second-order.
+
+That is why the site keeps the simple method: tracing costs 32 API calls per
+build against a rate-limited endpoint, to move the headline by a point. Re-run
+the check if the import pattern shifts:
+
+```bash
+python3 scripts/check_import_mix.py
+```
 
 The panel shows **gross** imports (the sum of all inflows), which is larger
 than the net balance in the panel above it.

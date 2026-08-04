@@ -301,7 +301,18 @@ h2 {
 .tip .t { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .tip .r { display: flex; align-items: center; gap: 7px; padding: 1px 0; }
 .tip .r .sw { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
-.tip .r .v { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.tip .r .v { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+
+/* Share sits in its own fixed-width column so the percentages line up
+   under each other regardless of how wide the MW value is. */
+.tip .r .v em {
+  display: inline-block;
+  width: 46px;
+  text-align: right;
+  margin-left: 9px;
+  font-style: normal;
+  color: var(--ink-muted);
+}
 .tip .r.tot { border-top: 1px solid var(--hairline); margin-top: 5px; padding-top: 5px; font-weight: 600; }
 .tip .r.tot .v { color: var(--ink); }
 

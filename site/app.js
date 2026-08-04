@@ -51,7 +51,7 @@ const I18N = {
     renSupply: 'Erneuerbare · mit Importen',
     ofSupply: 'der gesamten Versorgung',
     imported: 'Importiert',
-    impMixNote: 'Gezeigt ist der Bruttoimport — die Summe aller Zuflüsse, also mehr als der Nettosaldo weiter oben. Geschätzt, nicht gemessen: Jeder Grenzfluss wird dem Erzeugungsmix des Herkunftslands zum selben Zeitpunkt zugerechnet. Das ist eine Zurechnung, keine Verfolgung — Transit bleibt unberücksichtigt. Strom aus Tschechien kann ursprünglich aus Polen stammen, deutscher Strom aus Frankreich. Für echte Herkunft bräuchte es eine Flussverfolgung über das gesamte europäische Netz.',
+    impMixNote: 'Gezeigt ist der Bruttoimport — die Summe aller Zuflüsse, also mehr als der Nettosaldo weiter oben. Geschätzt, nicht gemessen: Jeder Grenzfluss wird dem Erzeugungsmix des Herkunftslands zum selben Zeitpunkt zugerechnet. Das ist eine Zurechnung, keine Verfolgung — Transit bleibt unberücksichtigt. Strom aus Tschechien kann ursprünglich aus Polen stammen, deutscher Strom aus Frankreich. Gegengeprüft: Eine echte Flussverfolgung über 16 Länder ergibt für Fossil und Kernkraft zusammen 53,3 % statt 54,2 % — die Abweichung liegt bei rund einem Prozentpunkt. Das Skript dafür liegt im Repository.',
     moneyTitle: 'Was der Stromhandel gekostet hat · 24 Stunden',
     importCost: 'Kosten für Import',
     exportRevenue: 'Erlös aus Export',
@@ -121,7 +121,7 @@ const I18N = {
     renSupply: 'Renewable · including imports',
     ofSupply: 'of total supply',
     imported: 'Imported',
-    impMixNote: 'This shows gross imports — the sum of all inflows, so more than the net balance above. Estimated, not measured: each border flow is attributed to the exporting country\'s generation mix at the same moment. That is attribution, not tracing — transit is not accounted for. Power imported from Czechia may have originated in Poland, and German power in France. True origin would need flow-tracing across the whole European network.',
+    impMixNote: 'This shows gross imports — the sum of all inflows, so more than the net balance above. Estimated, not measured: each border flow is attributed to the exporting country\'s generation mix at the same moment. That is attribution, not tracing — transit is not accounted for. Power imported from Czechia may have originated in Poland, and German power in France. Cross-checked: proper flow-tracing across 16 countries puts fossil and nuclear together at 53.3 % rather than 54.2 % — a gap of about one percentage point. The script for that is in the repository.',
     moneyTitle: 'What the power trade cost · 24 hours',
     importCost: 'Paid for imports',
     exportRevenue: 'Earned from exports',
@@ -315,7 +315,16 @@ function renderDay() {
   svg.textContent = '';
 
   const iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b;
-  const totals = times.map((_, i) => groups.reduce((a, g) => a + g.series[i], 0));
+
+  // Net imports ride on top of the domestic stack, so the bands add up to
+  // total supply. Only the positive side: when Austria is exporting there is
+  // nothing coming in, and the load line already sits below the stack there.
+  const imports = DATA.day.netImport.map(v => Math.max(v, 0));
+  const bands = [...groups.map(g => ({
+    key: g.key, name: label(g), series: g.series,
+  })), { key: 'import', name: t('importing2'), series: imports }];
+
+  const totals = times.map((_, i) => bands.reduce((a, b) => a + b.series[i], 0));
   const peak = Math.max(...totals, ...DATA.day.load);
   const STEP = 2000;
   // Round to a whole number of ticks so the top gridline is always a tick and
@@ -338,12 +347,12 @@ function renderDay() {
 
   // stacked bands, bottom up
   let base = new Array(N).fill(0);
-  for (const g of groups) {
-    const upper = base.map((b, i) => b + g.series[i]);
+  for (const b of bands) {
+    const upper = base.map((v, i) => v + b.series[i]);
     if (upper.every((v, i) => v - base[i] < 0.05)) { base = upper; continue; }
     const d = upper.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('') +
       base.map((v, i) => `L${x(N - 1 - i)},${y(base[N - 1 - i])}`).join('') + 'Z';
-    svg.append(svgEl('path', { d, fill: `var(--${g.key})`, stroke: 'var(--surface)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    svg.append(svgEl('path', { d, fill: `var(--${b.key})`, stroke: 'var(--surface)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
     base = upper;
   }
 
@@ -370,11 +379,11 @@ function renderDay() {
   // the same direction as the bands)
   const dl = document.getElementById('dayLegend');
   dl.textContent = '';
-  for (const g of [...groups].reverse()) {
+  for (const b of [...bands].reverse()) {
     const r = el('div', 'row');
     const sw = el('span', 'sw');
-    sw.style.background = `var(--${g.key})`;
-    r.append(sw, el('span', 'nm', label(g)));
+    sw.style.background = `var(--${b.key})`;
+    r.append(sw, el('span', 'nm', b.name));
     dl.append(r);
   }
   const lr = el('div', 'row');
@@ -398,8 +407,9 @@ function renderDay() {
     cursor.setAttribute('x2', x(i));
     cursor.setAttribute('opacity', 1);
 
-    const rows = [...groups].reverse().filter(g => g.series[i] > 0.05).map(g =>
-      `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW</span></div>`).join('');
+    const tot = totals[i] || 1;
+    const rows = [...bands].reverse().filter(b => b.series[i] > 0.05).map(b =>
+      `<div class="r"><span class="sw" style="background:var(--${b.key})"></span>${b.name}<span class="v">${nf(b.series[i])} MW<em>${nf(b.series[i] / tot * 100, 1)} %</em></span></div>`).join('');
     tip.innerHTML = `<div class="t">${dateFmt().format(new Date(times[i] * 1000))}</div>${rows}
       <div class="r tot"><span class="sw" style="background:var(--ink)"></span>${t('load')}<span class="v">${nf(DATA.day.load[i])} MW</span></div>`;
     tip.classList.add('on');
@@ -550,8 +560,9 @@ function drawImportMixChart(groups, im) {
     cursor.setAttribute('x1', x(i));
     cursor.setAttribute('x2', x(i));
     cursor.setAttribute('opacity', 1);
+    const tot = totals[i] || 1;
     const rows = [...groups].reverse().filter(g => g.series[i] > 0.05).map(g =>
-      `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW</span></div>`).join('');
+      `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW<em>${nf(g.series[i] / tot * 100, 1)} %</em></span></div>`).join('');
     tip.innerHTML = `<div class="t">${dateFmt().format(new Date(im.t[i] * 1000))}</div>${rows}
       <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('imported')}<span class="v">${nf(totals[i])} MW</span></div>`;
     tip.classList.add('on');
@@ -956,8 +967,12 @@ function renderTrade() {
     cursor.setAttribute('opacity', 1);
 
     const v = tr.net[i];
+    // Percentages here are of gross flow across all borders, so an inflow and
+    // an outflow of equal size each read as half the traffic rather than
+    // cancelling to nothing.
+    const gross = tr.countries.reduce((a, c) => a + Math.abs(c.series[i]), 0) || 1;
     const rows = tr.countries.map(c =>
-      `<div class="r"><span class="sw" style="background:${c.series[i] >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${country(c.name)}<span class="v">${c.series[i] > 0 ? '+' : ''}${nf(c.series[i])}</span></div>`).join('');
+      `<div class="r"><span class="sw" style="background:${c.series[i] >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${country(c.name)}<span class="v">${c.series[i] > 0 ? '+' : ''}${nf(c.series[i])}<em>${nf(Math.abs(c.series[i]) / gross * 100, 0)} %</em></span></div>`).join('');
     tip.innerHTML = `<div class="t">${dateFmt().format(new Date(tr.t[i] * 1000))}</div>${rows}
       <div class="r tot"><span class="sw" style="background:${v >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${v >= 0 ? t('importing2') : t('exporting2')}<span class="v">${v > 0 ? '+' : ''}${nf(v)} MW</span></div>`;
     tip.classList.add('on');

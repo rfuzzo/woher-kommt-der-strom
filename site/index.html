@@ -50,11 +50,22 @@
       <p class="note" data-i18n="dayNote"></p>
     </section>
 
-    <section id="riverSection" hidden>
-      <h2 data-i18n="riverTitle">Flüsse · live</h2>
-      <p class="stamp" id="riverStamp"></p>
-      <div class="rivers" id="rivers"></div>
-      <p class="note" data-i18n="riverNote"></p>
+
+    <section id="impMixSection">
+      <h2 data-i18n="impMixTitle">Woraus der importierte Strom besteht</h2>
+      <div class="tradestats" id="impMixStats"></div>
+      <div class="sharebar" id="impMixBar"></div>
+      <div class="legend" id="impMixLegend"></div>
+      <h3 class="subhead" data-i18n="impMix24">Importmix · 24 Stunden</h3>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="impMixChart" role="img"></svg></div>
+        <div class="tip" id="impMixTip"></div>
+      </div>
+      <p class="note" data-i18n="impMixNote"></p>
+      <details>
+        <summary data-i18n="tableToggle">Werte als Tabelle</summary>
+        <div id="impMixTable"></div>
+      </details>
     </section>
 
     <section id="tradeSection">
@@ -73,22 +84,6 @@
       </details>
     </section>
 
-    <section id="impMixSection">
-      <h2 data-i18n="impMixTitle">Woraus der importierte Strom besteht</h2>
-      <div class="tradestats" id="impMixStats"></div>
-      <div class="sharebar" id="impMixBar"></div>
-      <div class="legend" id="impMixLegend"></div>
-      <h3 class="subhead" data-i18n="impMix24">Importmix · 24 Stunden</h3>
-      <div class="plotwrap">
-        <div class="scroller"><svg class="chart" id="impMixChart" role="img"></svg></div>
-        <div class="tip" id="impMixTip"></div>
-      </div>
-      <p class="note" data-i18n="impMixNote"></p>
-      <details>
-        <summary data-i18n="tableToggle">Werte als Tabelle</summary>
-        <div id="impMixTable"></div>
-      </details>
-    </section>
 
     <section id="moneySection">
       <h2 data-i18n="moneyTitle">Was der Stromhandel gekostet hat · 24 Stunden</h2>
@@ -108,6 +103,13 @@
       </div>
       <div class="flows" id="flows"></div>
       <p class="note" data-i18n="flowNote"></p>
+    </section>
+
+    <section id="riverSection" hidden>
+      <h2 data-i18n="riverTitle">Flüsse · live</h2>
+      <p class="stamp" id="riverStamp"></p>
+      <div class="rivers" id="rivers"></div>
+      <p class="note" data-i18n="riverNote"></p>
     </section>
 
     <footer>
