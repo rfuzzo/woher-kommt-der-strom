@@ -36,6 +36,10 @@ Everything comes from the [Energy-Charts v2 API](https://api.energy-charts.info/
 | Generation mix, 24 h shape, load, renewable share | `/v2/public_power?country=at` |
 | Cross-border flows, import/export balance | `/v2/cbpf?country=at` |
 | Day-ahead price, trade valuation | `/v2/price?bzn=AT` |
+| Import composition | `/v2/public_power?country={cz,de,hu,it,si,ch}` |
+
+The API rate-limits (HTTP 429) when the neighbour countries are requested
+back to back, so `get()` retries with backoff. Do not remove that.
 
 Licence: CC BY 4.0, attribution `energy-charts.info`; prices additionally
 Bundesnetzagentur | SMARD.de. Both render in the page footer.
@@ -54,6 +58,22 @@ Energy-Charts publishes settled data 2–3 hours behind the wall clock, and the
 lag is in the source rather than here. The page shows the data timestamp and
 the publication lag instead of implying it is current. The river panel is the
 exception and carries its own, much fresher timestamp.
+
+### The import mix is attribution, not tracing
+
+Each border flow is attributed to the exporting country's own generation mix
+at that moment. This is the standard cheap approximation, and it has a real
+limitation: it ignores transit. Power that reaches Austria from Czechia may
+have originated in Poland; German power may be French nuclear. Getting true
+origin requires flow-tracing across the whole European network, which this
+does not attempt. The page states this in plain language rather than burying
+it.
+
+The panel shows **gross** imports (the sum of all inflows), which is larger
+than the net balance in the panel above it.
+
+`renewableShareSupply` is our own calculation — domestic plus attributed
+imported renewables over total supply — and is not a figure the API provides.
 
 ### The money figures are a valuation, not a settlement
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -66,16 +67,70 @@ NON_GENERATION = {
 # rather than trusting an endpoint to keep its current scale.
 TO_MW = {"MW": 1.0, "GW": 1000.0, "KW": 0.001, "W": 1e-6}
 
+# Austria's neighbours, mapping the cbpf series id to the country code the
+# generation endpoint expects. Used to estimate what imported power was made
+# of, by attributing each border flow to that country's generation mix at the
+# same moment. See IMPORT_CAVEAT below — this is attribution, not tracing.
+NEIGHBOURS = {
+    "czech_republic": "cz",
+    "germany": "de",
+    "hungary": "hu",
+    "italy": "it",
+    "slovenia": "si",
+    "switzerland": "ch",
+}
+
+# Groups for the import mix. Nuclear gets its own slot: Austria has none, so
+# it never appears in the domestic chart, but it is a large share of what
+# comes in. Order is the stack order and was colour-validated as such.
+IMPORT_GROUPS = [
+    ("hydro", "Wasserkraft", "Hydro",
+     ["hydro_run_of_river", "hydro_water_reservoir", "hydro_pumped_storage"]),
+    ("fossil", "Fossil", "Fossil",
+     ["fossil_gas", "fossil_hard_coal", "fossil_brown_coal_lignite",
+      "fossil_oil", "fossil_coal_derived_gas"]),
+    ("wind", "Wind", "Wind", ["wind_onshore", "wind_offshore"]),
+    ("solar", "Photovoltaik", "Solar", ["solar"]),
+    ("nuclear", "Kernkraft", "Nuclear", ["nuclear"]),
+    ("other", "Sonstige", "Other",
+     ["biomass", "waste", "other_renewables", "geothermal", "battery", "others",
+      "renewable_waste", "non_renewable_waste"]),
+]
+
+RENEWABLE_GROUPS = {"hydro", "wind", "solar"}
+
+# Series that are consumption or derived, never generation.
+NOT_GENERATION = {
+    "load", "residual_load", "renewable_share_of_load",
+    "renewable_share_of_generation", "cross_border_electricity_trading",
+    "hydro_pumped_storage_consumption", "battery_consumption",
+}
+
 
 def get(path: str, **params) -> dict:
+    """GET with backoff. The API rate-limits (429) when several countries are
+    requested back to back, which this script does for the import mix."""
     qs = "&".join(f"{k}={v}" for k, v in params.items())
     req = urllib.request.Request(f"{API}/{path}?{qs}",
                                  headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        payload = json.load(r)
-    if payload.get("deprecated"):
-        print(f"WARNING: {path} is flagged deprecated by the API", file=sys.stderr)
-    return payload
+    last = None
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                payload = json.load(r)
+            if payload.get("deprecated"):
+                print(f"WARNING: {path} is flagged deprecated by the API", file=sys.stderr)
+            return payload
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code != 429 and e.code < 500:
+                raise
+        except urllib.error.URLError as e:
+            last = e
+        wait = 4 * (attempt + 1)
+        print(f"  retry {path} ({params}) in {wait}s: {last}", file=sys.stderr)
+        time.sleep(wait)
+    raise last if last else RuntimeError(f"{path} failed")
 
 
 def to_mw(payload: dict) -> float:
@@ -104,6 +159,127 @@ def clean(vals: list | None, n: int, scale: float = 1.0) -> list[float]:
 
 def r1(x: float) -> float:
     return round(x, 1)
+
+
+def neighbour_mix(code: str) -> dict[int, dict[str, float]]:
+    """Timestamp -> {series id: share of that country's generation}."""
+    end = datetime.now(timezone.utc).date() + timedelta(days=1)
+    start = end - timedelta(days=FETCH_DAYS + 1)
+    payload = get("public_power", country=code, start=start, end=end)
+    scale = to_mw(payload)
+    out = {}
+    for row in payload["data"]:
+        ts = int(datetime.fromisoformat(row["timestamp"]).timestamp())
+        vals = {k: v * scale for k, v in row["values"].items()
+                if k not in NOT_GENERATION and v is not None and v > 0}
+        total = sum(vals.values())
+        if total > 0:
+            out[ts] = {k: v / total for k, v in vals.items()}
+    return out
+
+
+def add_import_mix(out: dict, win: list, times: list,
+                   group_series: dict, load: list) -> None:
+    """Estimate what the imported power was made of.
+
+    Each border flow is attributed to the exporting country's own generation
+    mix at that moment. This is *attribution, not tracing*: it ignores
+    transit, so power imported from Czechia that originally came from Poland
+    is counted as Czech. Proper flow-tracing needs the whole European
+    network. The page says so plainly.
+    """
+    flows = out.get("_cbpfRaw")
+    if not flows:
+        return
+
+    mixes = {}
+    for sid, code in NEIGHBOURS.items():
+        try:
+            mixes[code] = neighbour_mix(code)
+        except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
+            print(f"WARNING: mix for {code} unavailable: {e}", file=sys.stderr)
+
+    if not mixes:
+        return
+
+    def nearest(mix: dict, ts: int):
+        keys = [k for k in mix if k <= ts]
+        return mix[max(keys)] if keys else None
+
+    keys = [g[0] for g in IMPORT_GROUPS]
+    stack = {k: [] for k in keys}
+    stamps, totals, covered = [], [], []
+
+    for ts, per_border in flows:
+        att = {k: 0.0 for k in keys}
+        imported = 0.0
+        matched = 0.0
+        for sid, mw in per_border.items():
+            if mw <= 0:
+                continue
+            imported += mw
+            mix = nearest(mixes.get(NEIGHBOURS[sid], {}), ts)
+            if mix is None:
+                continue
+            matched += mw
+            for series_id, share in mix.items():
+                for key, _de, _en, ids in IMPORT_GROUPS:
+                    if series_id in ids:
+                        att[key] += mw * share
+                        break
+                else:
+                    att["other"] += mw * share
+        if imported <= 0 or matched <= 0:
+            continue
+        stamps.append(ts)
+        totals.append(imported)
+        covered.append(matched / imported)
+        for k in keys:
+            stack[k].append(att[k])
+
+    if not stamps:
+        return
+
+    last = len(stamps) - 1
+    now_total = sum(stack[k][last] for k in keys)
+    groups = [{
+        "key": key, "de": de, "en": en,
+        "mw": r1(stack[key][last]),
+        "pct": r1(100 * stack[key][last] / now_total) if now_total else 0.0,
+        "series": [r1(v) for v in stack[key]],
+    } for key, de, en, _ in IMPORT_GROUPS]
+
+    # Totals over the window, for the headline shares.
+    span = {k: sum(stack[k]) for k in keys}
+    span_total = sum(span.values()) or 1
+    dirty = (span["fossil"] + span["nuclear"]) / span_total * 100
+
+    # Renewable share of everything supplied, domestic plus imports —
+    # the consumption-side counterpart to the domestic-only figure.
+    dom_ren = dom_all = imp_ren = imp_all = 0.0
+    by_ts = {ts: i for i, ts in enumerate(stamps)}
+    for i in win:
+        ts = times[i]
+        j = by_ts.get(ts)
+        if j is None:
+            continue
+        dom_ren += sum(group_series[k][i] for k in ("hydro", "wind", "solar", "biomass"))
+        dom_all += sum(group_series[k][i] for k, _, _, _ in GROUPS)
+        imp_ren += sum(stack[k][j] for k in RENEWABLE_GROUPS)
+        imp_all += sum(stack[k][j] for k in keys)
+
+    supply = dom_all + imp_all
+    out["importMix"] = {
+        "at": stamps[last],
+        "t": stamps,
+        "groups": groups,
+        "total": r1(now_total),
+        "fossilNuclearPct": r1(dirty),
+        "coverage": r1(min(covered) * 100),
+        "countries": sorted({NEIGHBOURS[s] for _, pb in flows for s, mw in pb.items() if mw > 0}),
+        "renewableShareSupply": r1(100 * (dom_ren + imp_ren) / supply) if supply else None,
+        "renewableShareDomestic": r1(100 * dom_ren / dom_all) if dom_all else None,
+    }
 
 
 def main() -> None:
@@ -256,6 +432,14 @@ def main() -> None:
             "steps": len(fwin),
         }
         out["trade"]["countries"].sort(key=lambda c: -max(abs(v) for v in c["series"]))
+
+        # Per-border flows over the window, handed to the import-mix step.
+        # Stripped again before the file is written.
+        out["_cbpfRaw"] = [
+            (ftimes[i], {sid: clean(vals, len(ftimes), fscale)[i]
+                         for sid, vals in fcols.items() if sid != "sum"})
+            for i in fwin
+        ]
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
         print(f"WARNING: cross-border flows unavailable: {e}", file=sys.stderr)
 
@@ -314,6 +498,9 @@ def main() -> None:
                 }
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
         print(f"WARNING: day-ahead price unavailable: {e}", file=sys.stderr)
+
+    add_import_mix(out, win, times, group_series, load)
+    out.pop("_cbpfRaw", None)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, separators=(",", ":")) + "\n", encoding="utf-8")

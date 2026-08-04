@@ -43,6 +43,15 @@ const I18N = {
     exporting2: 'Export',
     tradeNote: 'Über null importiert Österreich netto, darunter exportiert es. Der Tagesverlauf folgt der Sonne: nachts und früh am Morgen hängt das Land am Import, mittags dreht die Photovoltaik die Bilanz um.',
     balanceCol: 'Saldo',
+    impMixTitle: 'Woraus der importierte Strom besteht',
+    impMix24: 'Importmix · 24 Stunden',
+    fossilNuclear: 'Fossil und Kernkraft',
+    ofImports: 'des Imports über 24 Stunden',
+    renDomestic: 'Erneuerbare · nur Inland',
+    renSupply: 'Erneuerbare · mit Importen',
+    ofSupply: 'der gesamten Versorgung',
+    imported: 'Importiert',
+    impMixNote: 'Gezeigt ist der Bruttoimport — die Summe aller Zuflüsse, also mehr als der Nettosaldo weiter oben. Geschätzt, nicht gemessen: Jeder Grenzfluss wird dem Erzeugungsmix des Herkunftslands zum selben Zeitpunkt zugerechnet. Das ist eine Zurechnung, keine Verfolgung — Transit bleibt unberücksichtigt. Strom aus Tschechien kann ursprünglich aus Polen stammen, deutscher Strom aus Frankreich. Für echte Herkunft bräuchte es eine Flussverfolgung über das gesamte europäische Netz.',
     moneyTitle: 'Was der Stromhandel gekostet hat · 24 Stunden',
     importCost: 'Kosten für Import',
     exportRevenue: 'Erlös aus Export',
@@ -104,6 +113,15 @@ const I18N = {
     exporting2: 'Export',
     tradeNote: 'Above zero Austria is a net importer, below it a net exporter. The shape follows the sun: overnight and early morning the country leans on imports, and around midday solar flips the balance.',
     balanceCol: 'Balance',
+    impMixTitle: 'What the imported power is made of',
+    impMix24: 'Import mix · 24 hours',
+    fossilNuclear: 'Fossil and nuclear',
+    ofImports: 'of imports over 24 hours',
+    renDomestic: 'Renewable · domestic only',
+    renSupply: 'Renewable · including imports',
+    ofSupply: 'of total supply',
+    imported: 'Imported',
+    impMixNote: 'This shows gross imports — the sum of all inflows, so more than the net balance above. Estimated, not measured: each border flow is attributed to the exporting country\'s generation mix at the same moment. That is attribution, not tracing — transit is not accounted for. Power imported from Czechia may have originated in Poland, and German power in France. True origin would need flow-tracing across the whole European network.',
     moneyTitle: 'What the power trade cost · 24 hours',
     importCost: 'Paid for imports',
     exportRevenue: 'Earned from exports',
@@ -396,6 +414,157 @@ function renderDay() {
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerleave', hide);
   svg.addEventListener('pointerdown', show);
+}
+
+/* ── what the imports are made of ─────────────────────────────────────── */
+
+// Stack order for the import mix, colour-validated as this sequence.
+// Nuclear only ever appears here — Austria has none of its own.
+const IMP_ORDER = ['hydro', 'fossil', 'wind', 'solar', 'nuclear', 'other'];
+
+function renderImportMix() {
+  const sec = document.getElementById('impMixSection');
+  const im = DATA.importMix;
+  if (!im || !im.groups || !im.groups.length) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const groups = IMP_ORDER.map(k => im.groups.find(g => g.key === k)).filter(Boolean);
+
+  const stats = [
+    { k: t('fossilNuclear'), v: nf(im.fossilNuclearPct, 1), u: '%', d: t('ofImports') },
+  ];
+  if (im.renewableShareDomestic != null && im.renewableShareSupply != null) {
+    stats.push({ k: t('renDomestic'), v: nf(im.renewableShareDomestic, 1), u: '%' });
+    stats.push({ k: t('renSupply'), v: nf(im.renewableShareSupply, 1), u: '%', d: t('ofSupply') });
+  }
+  const sbox = document.getElementById('impMixStats');
+  sbox.textContent = '';
+  for (const s of stats) {
+    const c = el('div', 'tstat');
+    c.append(el('div', 'k', s.k), el('div', 'v', `${s.v}<small>${s.u}</small>`));
+    if (s.d) c.append(el('div', 'd', s.d));
+    sbox.append(c);
+  }
+
+  const bar = document.getElementById('impMixBar');
+  const leg = document.getElementById('impMixLegend');
+  bar.textContent = '';
+  leg.textContent = '';
+  for (const g of groups) {
+    if (g.pct <= 0) continue;
+    const sp = el('span');
+    sp.style.flex = `${g.pct} 1 0`;
+    sp.style.background = `var(--${g.key})`;
+    sp.title = `${label(g)} · ${nf(g.pct, 1)} %`;
+    bar.append(sp);
+  }
+  for (const g of groups) {
+    const r = el('div', 'row');
+    const sw = el('span', 'sw');
+    sw.style.background = `var(--${g.key})`;
+    r.append(sw, el('span', 'nm', label(g)),
+      el('span', 'mw', `${nf(g.mw)} MW`),
+      el('span', 'pc', `${nf(g.pct, 1)} %`));
+    leg.append(r);
+  }
+
+  const rows = groups.map(g =>
+    `<tr><td>${label(g)}</td><td class="n">${nf(g.mw)}</td><td class="n">${nf(g.pct, 1)}</td></tr>`).join('');
+  document.getElementById('impMixTable').innerHTML =
+    `<table><caption>${t('impMixTitle')}</caption>
+     <thead><tr><th>${t('source')}</th><th class="n">MW</th><th class="n">${t('share')} %</th></tr></thead>
+     <tbody>${rows}</tbody></table>`;
+
+  drawImportMixChart(groups, im);
+}
+
+function drawImportMixChart(groups, im) {
+  const svg = document.getElementById('impMixChart');
+  const N = im.t.length;
+  if (N < 2) return;
+
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320);
+  const H = 250;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.textContent = '';
+  svg.setAttribute('aria-label', `${t('impMix24')} — ${groups.map(g => label(g)).join(', ')}`);
+
+  const P = { t: 26, r: PAD.r, b: PAD.b, l: PAD.l };
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const totals = im.t.map((_, i) => groups.reduce((a, g) => a + g.series[i], 0));
+  const step = niceStep(Math.max(...totals, 1), 4);
+  const top = Math.max(Math.ceil(Math.max(...totals) / step) * step, step);
+
+  const x = i => P.l + (i / (N - 1)) * iw;
+  const y = v => P.t + ih - (v / top) * ih;
+
+  for (let v = 0; v <= top + step / 2; v += step) {
+    svg.append(svgEl('line', {
+      class: v === 0 ? 'axisline' : 'gridline',
+      x1: P.l, x2: W - P.r, y1: y(v), y2: y(v),
+    }));
+    const lab = svgEl('text', { x: P.l - 8, y: y(v) + 4, 'text-anchor': 'end' });
+    lab.textContent = v === 0 ? '0' : nf(v);
+    svg.append(lab);
+  }
+  const unit = svgEl('text', { x: P.l - 8, y: P.t - 10, 'text-anchor': 'end' });
+  unit.textContent = 'MW';
+  svg.append(unit);
+
+  let base = new Array(N).fill(0);
+  for (const g of groups) {
+    const upper = base.map((b, i) => b + g.series[i]);
+    if (upper.every((v, i) => v - base[i] < 0.05)) { base = upper; continue; }
+    const d = upper.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('')
+      + base.map((_, i) => `L${x(N - 1 - i)},${y(base[N - 1 - i])}`).join('') + 'Z';
+    svg.append(svgEl('path', {
+      d, fill: `var(--${g.key})`, stroke: 'var(--surface)',
+      'stroke-width': 2, 'stroke-linejoin': 'round',
+    }));
+    base = upper;
+  }
+
+  const fmt = clockFmt();
+  const every = Math.max(1, Math.round(N / 8));
+  im.t.forEach((ts, i) => {
+    if (i % every && i !== N - 1) return;
+    const lab = svgEl('text', {
+      x: x(i), y: H - 8,
+      'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle',
+    });
+    lab.textContent = fmt.format(new Date(ts * 1000));
+    svg.append(lab);
+  });
+
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 });
+  svg.append(cursor);
+
+  const tip = document.getElementById('impMixTip');
+  const wrap = svg.closest('.plotwrap');
+  const show = ev => {
+    const b = svg.getBoundingClientRect();
+    const px = (ev.clientX - b.left) / b.width * W;
+    let i = Math.round((px - P.l) / iw * (N - 1));
+    i = Math.max(0, Math.min(N - 1, i));
+    cursor.setAttribute('x1', x(i));
+    cursor.setAttribute('x2', x(i));
+    cursor.setAttribute('opacity', 1);
+    const rows = [...groups].reverse().filter(g => g.series[i] > 0.05).map(g =>
+      `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW</span></div>`).join('');
+    tip.innerHTML = `<div class="t">${dateFmt().format(new Date(im.t[i] * 1000))}</div>${rows}
+      <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('imported')}<span class="v">${nf(totals[i])} MW</span></div>`;
+    tip.classList.add('on');
+    const wb = wrap.getBoundingClientRect();
+    const rel = x(i) / W * b.width + (b.left - wb.left);
+    tip.style.left = Math.min(Math.max(rel + 14, 0), wb.width - tip.offsetWidth) + 'px';
+    tip.style.top = '6px';
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', () => {
+    tip.classList.remove('on'); cursor.setAttribute('opacity', 0);
+  });
 }
 
 /* ── what the trade cost ──────────────────────────────────────────────── */
@@ -905,6 +1074,7 @@ function renderAll() {
   renderMix();
   renderDay();
   renderTrade();
+  renderImportMix();
   renderMoney();
   renderFlows();
   renderRivers();
@@ -925,6 +1095,7 @@ document.getElementById('theme').addEventListener('click', () => {
   localStorage.setItem('theme', document.documentElement.dataset.theme);
   renderDay();
   renderTrade();
+  renderImportMix();
   renderMoney();
 });
 
