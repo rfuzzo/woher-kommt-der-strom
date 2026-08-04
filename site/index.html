@@ -50,6 +50,13 @@
       <p class="note" data-i18n="dayNote"></p>
     </section>
 
+    <section id="riverSection" hidden>
+      <h2 data-i18n="riverTitle">Flüsse · live</h2>
+      <p class="stamp" id="riverStamp"></p>
+      <div class="rivers" id="rivers"></div>
+      <p class="note" data-i18n="riverNote"></p>
+    </section>
+
     <section id="tradeSection">
       <h2 data-i18n="tradeTitle">Import und Export · 24 Stunden</h2>
       <div class="tradestats" id="tradeStats"></div>
@@ -64,6 +71,16 @@
         <summary data-i18n="tableToggle">Werte als Tabelle</summary>
         <div id="tradeTable"></div>
       </details>
+    </section>
+
+    <section id="moneySection">
+      <h2 data-i18n="moneyTitle">Was der Stromhandel gekostet hat · 24 Stunden</h2>
+      <div class="tradestats" id="moneyStats"></div>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="moneyChart" role="img"></svg></div>
+        <div class="tip" id="moneyTip"></div>
+      </div>
+      <p class="note" data-i18n="moneyNote"></p>
     </section>
 
     <section id="flowSection">

@@ -35,16 +35,34 @@ Everything comes from the [Energy-Charts v2 API](https://api.energy-charts.info/
 |---|---|
 | Generation mix, 24 h shape, load, renewable share | `/v2/public_power?country=at` |
 | Cross-border flows, import/export balance | `/v2/cbpf?country=at` |
-| Day-ahead price | `/v2/price?bzn=AT` |
+| Day-ahead price, trade valuation | `/v2/price?bzn=AT` |
 
 Licence: CC BY 4.0, attribution `energy-charts.info`; prices additionally
 Bundesnetzagentur | SMARD.de. Both render in the page footer.
+
+River discharge comes from [eHYD](https://ehyd.gv.at/) (Hydrographie
+Österreich, CC BY 4.0), via `/services/Diagram/pegelBgis?hzbnr=<id>` — one
+gauge per river, requested **from the browser**. eHYD sends
+`access-control-allow-origin: *` and refreshes every ~15 minutes, so that
+panel is roughly two hours fresher than everything else and needs no rebuild.
+If eHYD is unreachable the panel stays hidden and the rest of the page is
+unaffected.
 
 ### This is not live
 
 Energy-Charts publishes settled data 2–3 hours behind the wall clock, and the
 lag is in the source rather than here. The page shows the data timestamp and
-the publication lag instead of implying it is current.
+the publication lag instead of implying it is current. The river panel is the
+exception and carries its own, much fresher timestamp.
+
+### The money figures are a valuation, not a settlement
+
+Import cost and export revenue are commercial trade volumes priced at the
+day-ahead spot price. Real contracts do not all clear on the exchange, so
+treat the euro numbers as an order of magnitude. They use
+`cross_border_electricity_trading` rather than physical flows, because money
+follows trades rather than what the wires carry — the two series track closely
+but are not identical.
 
 ## Notes for anyone changing this
 
@@ -82,9 +100,11 @@ Built with the help of [Claude Code](https://claude.com/claude-code).
 
 ## Ideas
 
-- Hydro: reservoir levels and river discharge from
-  [ehyd.gv.at](https://ehyd.gv.at/) (CC BY 4.0).
+- River discharge against hydro generation — does the run-of-river fleet
+  visibly track the water? Care needed not to imply more causation than the
+  data carries.
 - Grid frequency from `/v2/frequency` — Austria shares the Continental Europe
-  synchronous area, so it is the same frequency as Germany.
+  synchronous area, so it is the same frequency as Germany. Effectively live,
+  but the API is CORS-locked, so it needs a proxy or the Actions rebuild.
 - The seasonal flip from net exporter to net importer, which 24 hours of data
   cannot show.

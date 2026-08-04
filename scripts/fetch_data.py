@@ -274,6 +274,44 @@ def main() -> None:
                 "eur": [r1(p[1]) for p in recent],
                 "now": r1(current[1]),
             }
+
+            # What the cross-border balance was worth at day-ahead prices.
+            # Commercial trading is used rather than physical flows: money
+            # follows trades, not what the wires happen to carry. This is a
+            # valuation, not a settlement figure — actual contracts are not
+            # all struck at spot.
+            by_price = dict(pts)
+            hours = step_s / 3600
+            cost = rev = 0.0
+            imp_mwh = exp_mwh = 0.0
+            mt, cum = [], []
+            for i in win:
+                p = by_price.get(times[i])
+                if p is None:
+                    continue
+                mwh = trading[i] * hours
+                if mwh > 0:
+                    imp_mwh += mwh
+                    cost += mwh * p
+                else:
+                    exp_mwh += -mwh
+                    rev += -mwh * p
+                mt.append(times[i])
+                cum.append(round(cost - rev))
+
+            if mt:
+                out["money"] = {
+                    "currency": "EUR",
+                    "t": mt,
+                    "cumulative": cum,
+                    "importCost": round(cost),
+                    "exportRevenue": round(rev),
+                    "net": round(cost - rev),
+                    "importMwh": round(imp_mwh),
+                    "exportMwh": round(exp_mwh),
+                    "avgImportPrice": r1(cost / imp_mwh) if imp_mwh else None,
+                    "avgExportPrice": r1(rev / exp_mwh) if exp_mwh else None,
+                }
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
         print(f"WARNING: day-ahead price unavailable: {e}", file=sys.stderr)
 

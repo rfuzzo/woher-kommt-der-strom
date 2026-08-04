@@ -8,6 +8,21 @@
 // and lightness checks in both modes; reordering invalidates that.
 const ORDER = ['hydro', 'fossil', 'wind', 'solar', 'pumped', 'biomass', 'other'];
 const REPO = 'https://github.com/rfuzzo/woher-kommt-der-strom';
+
+/* Rivers are fetched straight from the browser, not baked into data.json:
+   ehyd serves `access-control-allow-origin: *` and refreshes every ~15 min,
+   so this panel is roughly two hours fresher than the electricity data.
+   One representative gauge per river, each the most downstream one inside
+   Austria. `hzbnr` is ehyd's station id. */
+const EHYD = 'https://ehyd.gv.at/services/Diagram/pegelBgis?hzbnr=';
+const RIVERS = [
+  { river: 'Donau', en: 'Danube', hzbnr: 207373 },
+  { river: 'Inn', en: 'Inn', hzbnr: 201889 },
+  { river: 'Salzach', en: 'Salzach', hzbnr: 203539 },
+  { river: 'Enns', en: 'Enns', hzbnr: 205922 },
+  { river: 'Drau', en: 'Drava', hzbnr: 213595 },
+  { river: 'Mur', en: 'Mur', hzbnr: 211490 },
+];
 const COLOR = k => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim();
 
 const I18N = {
@@ -28,6 +43,24 @@ const I18N = {
     exporting2: 'Export',
     tradeNote: 'Über null importiert Österreich netto, darunter exportiert es. Der Tagesverlauf folgt der Sonne: nachts und früh am Morgen hängt das Land am Import, mittags dreht die Photovoltaik die Bilanz um.',
     balanceCol: 'Saldo',
+    moneyTitle: 'Was der Stromhandel gekostet hat · 24 Stunden',
+    importCost: 'Kosten für Import',
+    exportRevenue: 'Erlös aus Export',
+    netCost: 'Netto',
+    paidOut: 'geflossen',
+    avgPaid: 'Ø bezahlt',
+    avgEarned: 'Ø erlöst',
+    runningTotal: 'Laufende Summe',
+    moneyNote: 'Bewertet zum Day-Ahead-Börsenpreis, gerechnet auf die kommerziellen Handelsmengen — eine Größenordnung, keine Abrechnung: reale Verträge laufen nicht alle über die Börse. Import ist nicht automatisch schlecht: eingekaufter Strom ist oft billiger, als ein Gaskraftwerk hochzufahren. An diesem Tag lag der Ø-Importpreis allerdings über dem Ø-Exportpreis.',
+    riverTitle: 'Flüsse · live',
+    riverNote: 'Abfluss an je einem Pegel pro Fluss, dem jeweils untersten in Österreich. NW und MW sind die Referenzwerte der Hydrographie für Niedrig- und Mittelwasser an dieser Messstelle. Diese Werte kommen direkt aus eHYD und sind rund zwei Stunden aktueller als die Stromdaten oben.',
+    belowNW: 'unter Niedrigwasser',
+    nearNW: 'um Niedrigwasser',
+    belowMW: 'unter Mittelwasser',
+    aboveMW: 'über Mittelwasser',
+    ofMean: 'des Mittelwassers',
+    riverLive: 'Direkt von eHYD geladen',
+    days7: '7 Tage',
     tableToggle: 'Werte als Tabelle',
     importing: 'Import nach Österreich',
     exporting: 'Export aus Österreich',
@@ -48,7 +81,7 @@ const I18N = {
     mixNote: 'Die Anteile beziehen sich auf die inländische Erzeugung, nicht auf den Verbrauch. Pumpspeicher zählt hier als Erzeugung — die Energie zum Hochpumpen stammt aus einem früheren Zeitpunkt.',
     dayNote: 'Die Flächen sind die inländische Erzeugung, die kräftige Linie ist die Last. Liegt die Linie unter den Flächen, exportiert Österreich mehr, als es importiert.',
     flowNote: 'Physikalische Flüsse an den Kuppelstellen, nicht Handelsgeschäfte. Strom fließt auch durch Österreich hindurch, ohne hier verbraucht zu werden.',
-    sources: 'Erzeugung, Last, Grenzflüsse und Preis: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), gespeist aus <a href="https://transparency.entsoe.eu/">ENTSO-E</a> und <a href="https://www.apg.at/">APG</a>.',
+    sources: 'Erzeugung, Last, Grenzflüsse und Preis: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), gespeist aus <a href="https://transparency.entsoe.eu/">ENTSO-E</a> und <a href="https://www.apg.at/">APG</a>. Abflussdaten: <a href="https://ehyd.gv.at">ehyd.gv.at</a>, Hydrographie Österreich, CC BY 4.0.',
     credit: 'Idee inspiriert von <a href="https://holadelej.hu/">holadelej.hu</a> (Ungarn) — eigenständig gebaut, ohne Übernahme von Gestaltung oder Text.',
     colophon: 'Quellcode auf <a href="' + REPO + '">GitHub</a> — offen und nachbaubar. Gebaut mit Unterstützung von <a href="https://claude.com/claude-code">Claude Code</a>.',
     err: 'Die Daten konnten nicht geladen werden.',
@@ -71,6 +104,24 @@ const I18N = {
     exporting2: 'Export',
     tradeNote: 'Above zero Austria is a net importer, below it a net exporter. The shape follows the sun: overnight and early morning the country leans on imports, and around midday solar flips the balance.',
     balanceCol: 'Balance',
+    moneyTitle: 'What the power trade cost · 24 hours',
+    importCost: 'Paid for imports',
+    exportRevenue: 'Earned from exports',
+    netCost: 'Net',
+    paidOut: 'out',
+    avgPaid: 'avg paid',
+    avgEarned: 'avg earned',
+    runningTotal: 'Running total',
+    moneyNote: 'Valued at the day-ahead exchange price against commercial trade volumes — an order of magnitude, not a settlement: real contracts do not all go through the exchange. Importing is not automatically bad, since bought power is often cheaper than firing up a gas plant. On this day, though, the average import price was above the average export price.',
+    riverTitle: 'Rivers · live',
+    riverNote: 'Discharge at one gauge per river, the most downstream one inside Austria. NW and MW are the hydrographic service\'s own reference values for low water and mean water at that gauge. These readings come straight from eHYD and are about two hours fresher than the electricity data above.',
+    belowNW: 'below low water',
+    nearNW: 'around low water',
+    belowMW: 'below mean water',
+    aboveMW: 'above mean water',
+    ofMean: 'of mean water',
+    riverLive: 'Loaded directly from eHYD',
+    days7: '7 days',
     tableToggle: 'View values as a table',
     importing: 'Importing into Austria',
     exporting: 'Exporting from Austria',
@@ -347,6 +398,270 @@ function renderDay() {
   svg.addEventListener('pointerdown', show);
 }
 
+/* ── what the trade cost ──────────────────────────────────────────────── */
+
+// Largest of 1/2/5 × 10^k that still leaves at most `count` ticks.
+function niceStep(range, count) {
+  const rough = range / count;
+  const mag = 10 ** Math.floor(Math.log10(rough));
+  for (const m of [1, 2, 5, 10]) {
+    if (rough <= m * mag) return m * mag;
+  }
+  return 10 * mag;
+}
+
+const eur = (v, frac = 0) => new Intl.NumberFormat(LANG === 'de' ? 'de-AT' : 'en-GB',
+  { style: 'currency', currency: 'EUR', maximumFractionDigits: frac,
+    minimumFractionDigits: frac }).format(v);
+
+// Millions read better than nine digits on a headline figure.
+const eurShort = v => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v < 0 ? '−' : '') + eur(a / 1e6, 2).replace(/([\d.,]+)/, '$1') + ' M';
+  if (a >= 1e4) return (v < 0 ? '−' : '') + eur(Math.round(a / 1e3) * 1e3);
+  return eur(v);
+};
+
+function renderMoney() {
+  const sec = document.getElementById('moneySection');
+  const m = DATA.money;
+  if (!m || !m.cumulative || m.cumulative.length < 2) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const box = document.getElementById('moneyStats');
+  box.textContent = '';
+  const stats = [
+    { k: t('importCost'), v: eurShort(m.importCost), cls: 'imp',
+      d: m.avgImportPrice != null ? `${t('avgPaid')} ${nf(m.avgImportPrice, 1)} €/MWh` : '' },
+    { k: t('exportRevenue'), v: eurShort(m.exportRevenue), cls: 'exp',
+      d: m.avgExportPrice != null ? `${t('avgEarned')} ${nf(m.avgExportPrice, 1)} €/MWh` : '' },
+    { k: t('netCost'), v: eurShort(m.net), d: t('paidOut') },
+  ];
+  for (const s of stats) {
+    const c = el('div', 'tstat');
+    const val = el('div', 'v', s.v);
+    if (s.cls) val.classList.add(s.cls);
+    c.append(el('div', 'k', s.k), val);
+    if (s.d) c.append(el('div', 'd', s.d));
+    box.append(c);
+  }
+
+  const svg = document.getElementById('moneyChart');
+  const N = m.cumulative.length;
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320);
+  const H = 210;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.textContent = '';
+  svg.setAttribute('aria-label', `${t('moneyTitle')} — ${t('runningTotal')} ${eur(m.net)}`);
+
+  const P = { t: 26, r: PAD.r, b: PAD.b, l: 58 };
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+
+  // Round tick step, so the axis reads 0 / 1 / 2 / 3 M rather than whatever
+  // quarters of the data range happen to be.
+  const rawHi = Math.max(...m.cumulative, 0), rawLo = Math.min(...m.cumulative, 0);
+  const step = niceStep((rawHi - rawLo) || 1, 5);
+  const hi = Math.ceil(rawHi / step) * step;
+  const lo = Math.floor(rawLo / step) * step;
+  const span = (hi - lo) || step;
+
+  const x = i => P.l + (i / (N - 1)) * iw;
+  const y = v => P.t + ih - ((v - lo) / span) * ih;
+
+  const millions = Math.max(Math.abs(hi), Math.abs(lo)) >= 1e6;
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    svg.append(svgEl('line', {
+      class: Math.abs(v) < step / 1000 ? 'axisline' : 'gridline',
+      x1: P.l, x2: W - P.r, y1: y(v), y2: y(v),
+    }));
+    const lab = svgEl('text', { x: P.l - 8, y: y(v) + 4, 'text-anchor': 'end' });
+    lab.textContent = v === 0 ? '0'
+      : millions ? nf(v / 1e6, step < 1e6 ? 1 : 0) : nf(Math.round(v / 1e3));
+    svg.append(lab);
+  }
+  const unit = svgEl('text', { x: P.l - 8, y: P.t - 10, 'text-anchor': 'end' });
+  unit.textContent = millions ? 'Mio €' : '1000 €';
+  svg.append(unit);
+
+  const line = m.cumulative.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  svg.append(svgEl('path', {
+    d: `${line}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`,
+    fill: 'var(--import)', 'fill-opacity': 0.16,
+  }));
+  svg.append(svgEl('path', {
+    d: line, fill: 'none', stroke: 'var(--import)', 'stroke-width': 2,
+    'stroke-linejoin': 'round',
+  }));
+
+  const fmt = clockFmt();
+  const every = Math.max(1, Math.round(N / 8));
+  m.t.forEach((ts, i) => {
+    if (i % every && i !== N - 1) return;
+    const lab = svgEl('text', {
+      x: x(i), y: H - 8,
+      'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle',
+    });
+    lab.textContent = fmt.format(new Date(ts * 1000));
+    svg.append(lab);
+  });
+
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 });
+  svg.append(cursor);
+
+  const tip = document.getElementById('moneyTip');
+  const wrap = svg.closest('.plotwrap');
+  const show = ev => {
+    const b = svg.getBoundingClientRect();
+    const px = (ev.clientX - b.left) / b.width * W;
+    let i = Math.round((px - P.l) / iw * (N - 1));
+    i = Math.max(0, Math.min(N - 1, i));
+    cursor.setAttribute('x1', x(i));
+    cursor.setAttribute('x2', x(i));
+    cursor.setAttribute('opacity', 1);
+    tip.innerHTML = `<div class="t">${dateFmt().format(new Date(m.t[i] * 1000))}</div>
+      <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('runningTotal')}<span class="v">${eur(m.cumulative[i])}</span></div>`;
+    tip.classList.add('on');
+    const wb = wrap.getBoundingClientRect();
+    const rel = x(i) / W * b.width + (b.left - wb.left);
+    tip.style.left = Math.min(Math.max(rel + 14, 0), wb.width - tip.offsetWidth) + 'px';
+    tip.style.top = '6px';
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', () => {
+    tip.classList.remove('on'); cursor.setAttribute('opacity', 0);
+  });
+}
+
+/* ── rivers (fetched live, client-side) ───────────────────────────────── */
+
+let RIVER_DATA = null;
+
+const num = v => {
+  const x = parseFloat(String(v).replace(',', '.'));
+  return Number.isFinite(x) ? x : null;
+};
+
+// "04.08.26 18:30" — ehyd's own display format, not ISO.
+function ehydTime(s) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})/.exec(String(s || ''));
+  if (!m) return null;
+  return new Date(2000 + +m[3], +m[2] - 1, +m[1], +m[4], +m[5]);
+}
+
+async function loadRivers() {
+  const results = await Promise.allSettled(
+    RIVERS.map(r => fetch(EHYD + r.hzbnr, { cache: 'no-store' })
+      .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+      .then(d => ({ ...r, d }))));
+
+  const ok = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+  if (!ok.length) return;           // panel simply stays hidden
+
+  RIVER_DATA = ok.map(({ river, en, d }) => {
+    const series = (d.data || []).map(num).filter(v => v !== null);
+    return {
+      river, en,
+      gauge: d.messstelle,
+      unit: d.einheit || 'm³/s',
+      now: num(d.wert),
+      at: ehydTime(d.zp),
+      nw: num(d.niedrigwasser),
+      mw: num(d.mittelwasser),
+      link: d.internet || null,
+      series,
+    };
+  }).filter(r => r.now !== null);
+
+  if (RIVER_DATA.length) renderRivers();
+}
+
+function riverStatus(r) {
+  if (r.nw == null || r.mw == null) return '';
+  if (r.now < r.nw * 0.95) return t('belowNW');
+  if (r.now < r.nw * 1.1) return t('nearNW');
+  if (r.now < r.mw) return t('belowMW');
+  return t('aboveMW');
+}
+
+function renderRivers() {
+  if (!RIVER_DATA) return;
+  const sec = document.getElementById('riverSection');
+  sec.hidden = false;
+
+  const at = RIVER_DATA.map(r => r.at).filter(Boolean).sort((a, b) => b - a)[0];
+  const st = document.getElementById('riverStamp');
+  st.textContent = '';
+  st.append(el('span', 'dot'), document.createTextNode(
+    (at ? `${t('asOf')} ${dateFmt().format(at)} · ` : '') + t('riverLive')));
+
+  const box = document.getElementById('rivers');
+  box.textContent = '';
+
+  for (const r of RIVER_DATA) {
+    const card = el('div', 'river');
+
+    const head = el('div', 'rh');
+    head.append(el('span', 'nm', LANG === 'de' ? r.river : r.en),
+      el('span', 'gauge', r.gauge));
+    card.append(head);
+
+    const v = el('div', 'rv');
+    v.innerHTML = `${nf(r.now, r.now < 100 ? 1 : 0)}<small>${r.unit}</small>`;
+    card.append(v);
+
+    if (r.mw != null) {
+      card.append(el('div', 'rpct',
+        `${nf(r.now / r.mw * 100, 0)} % ${t('ofMean')} · ${riverStatus(r)}`));
+    }
+
+    // Scale runs 0 → mean water, so the bars are comparable as a fraction of
+    // normal; it stretches only if a river runs above its mean.
+    const scale = Math.max(r.mw || r.now, r.now * 1.08);
+    const track = el('div', 'rtrack');
+    const bar = el('div', 'rbar');
+    bar.style.width = Math.max(r.now / scale * 100, 1) + '%';
+    track.append(bar);
+
+    for (const [val, lab] of [[r.nw, 'NW'], [r.mw, 'MW']]) {
+      if (val == null || val > scale) continue;
+      const tick = el('div', 'rtick');
+      tick.style.left = (val / scale * 100) + '%';
+      tick.append(el('span', 'lab', lab));
+      track.append(tick);
+    }
+    card.append(track);
+
+    if (r.series.length > 2) card.append(riverSpark(r));
+    box.append(card);
+  }
+}
+
+function riverSpark(r) {
+  const N = r.series.length, W = 240, H = 34;
+  const svg = svgEl('svg', {
+    class: 'chart', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none',
+    role: 'img', 'aria-label': `${r.gauge} ${t('days7')}`,
+  });
+  svg.style.height = H + 'px';
+
+  const hi = Math.max(...r.series), lo = Math.min(...r.series);
+  const span = hi - lo || 1;
+  const x = i => (i / (N - 1)) * W;
+  const y = v => H - 3 - ((v - lo) / span) * (H - 6);
+
+  const line = r.series.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  svg.append(svgEl('path', {
+    d: `${line}L${W},${H}L0,${H}Z`, fill: 'var(--hydro)', 'fill-opacity': 0.18,
+  }));
+  svg.append(svgEl('path', {
+    d: line, fill: 'none', stroke: 'var(--hydro)', 'stroke-width': 1.5,
+    'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke',
+  }));
+  return svg;
+}
+
 /* ── import / export over 24 h ────────────────────────────────────────── */
 
 /* Signed series drawn as an area off a zero baseline: the same path is
@@ -590,7 +905,9 @@ function renderAll() {
   renderMix();
   renderDay();
   renderTrade();
+  renderMoney();
   renderFlows();
+  renderRivers();
   renderFooter();
 }
 
@@ -608,6 +925,7 @@ document.getElementById('theme').addEventListener('click', () => {
   localStorage.setItem('theme', document.documentElement.dataset.theme);
   renderDay();
   renderTrade();
+  renderMoney();
 });
 
 if (localStorage.getItem('theme')) {
@@ -626,6 +944,9 @@ fetch('data.json?' + Date.now())
     DATA = d;
     document.getElementById('app').hidden = false;
     renderAll();
+    // Independent of the main payload: if ehyd is unreachable the rest of
+    // the page is unaffected and the panel stays hidden.
+    loadRivers().catch(e => console.warn('rivers unavailable:', e));
   })
   .catch(e => {
     const box = document.getElementById('error');
