@@ -444,8 +444,8 @@ h2 {
 .comparecard .v { font-size: 27px; font-weight: 600; margin-top: 3px; }
 .comparecard .v small { font-size: 13px; color: var(--ink-2); margin-left: 3px; }
 .comparecard .delta { margin-top: 6px; font-size: 13px; font-weight: 600; }
-.comparecard .delta.up { color: var(--import); }
-.comparecard .delta.down { color: var(--export); }
+.comparecard .delta.good { color: var(--export); }
+.comparecard .delta.bad { color: var(--import); }
 .comparecard .base { color: var(--ink-muted); font-size: 11px; margin-top: 2px; }
 
 .forecastgrid {

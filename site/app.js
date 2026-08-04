@@ -509,19 +509,21 @@ function renderComparison() {
   if (!c) { section.hidden = true; return; }
   section.hidden = false;
   const metrics = [
-    { key: 'avgLoad', label: t('avgLoad'), unit: 'MW', digits: 0 },
-    { key: 'renewablePct', label: t('renewableDomestic'), unit: '%', digits: 1 },
-    { key: 'importShare', label: t('importDependency'), unit: '%', digits: 1 },
+    { key: 'avgLoad', label: t('avgLoad'), unit: 'MW', digits: 0, goodDirection: 0 },
+    { key: 'renewablePct', label: t('renewableDomestic'), unit: '%', digits: 1, goodDirection: 1 },
+    { key: 'importShare', label: t('importDependency'), unit: '%', digits: 1, goodDirection: -1 },
   ];
   const box = document.getElementById('compareGrid');
   box.textContent = '';
   for (const m of metrics) {
     const now = c.current[m.key], base = c.baseline[m.key];
     const delta = now - base;
+    const sentiment = m.goodDirection === 0 || delta === 0 ? ''
+      : delta * m.goodDirection > 0 ? 'good' : 'bad';
     const card = el('div', 'comparecard');
     card.append(el('div', 'k', m.label),
       el('div', 'v', `${nf(now, m.digits)}<small>${m.unit}</small>`),
-      el('div', `delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`,
+      el('div', `delta ${sentiment}`,
         `${delta > 0 ? '↑' : delta < 0 ? '↓' : '→'} ${nf(Math.abs(delta), m.digits)} ${m.unit}`),
       el('div', 'base', `${nf(base, m.digits)} ${m.unit} · ${t('vsAverage')}`));
     box.append(card);
