@@ -46,7 +46,7 @@ const I18N = {
     forecastPeak: 'Höchstwert',
     forecastLow: 'Tiefstpreis',
     forecastNote: 'Prognosewerte sind keine Messwerte. Die Photovoltaik-Prognose und der Day-Ahead-Preis werden getrennt gezeigt; gleiche Zeitpunkte bedeuten nicht automatisch einen kausalen Zusammenhang.',
-    flowTitle: 'Grenzüberschreitende Flüsse · jetzt',
+    flowTitle: 'Grenzüberschreitende Flüsse',
     tradeTitle: 'Import und Export · 24 Stunden',
     perCountry: 'Je Nachbarland',
     peakImport: 'Höchster Import',
@@ -58,6 +58,8 @@ const I18N = {
     exporting2: 'Export',
     tradeNote: 'Über null importiert Österreich netto, darunter exportiert es. Der Tagesverlauf folgt der Sonne: nachts und früh am Morgen hängt das Land am Import, mittags dreht die Photovoltaik die Bilanz um.',
     balanceCol: 'Saldo',
+    netBalance: 'Netto-Saldo',
+    sourceAge: 'Datenquelle rund {h} alt',
     impMixTitle: 'Woraus der importierte Strom besteht',
     impMix24: 'Importmix · 24 Stunden',
     fossilNuclear: 'Fossil und Kernkraft',
@@ -132,7 +134,7 @@ const I18N = {
     forecastPeak: 'Peak',
     forecastLow: 'Lowest price',
     forecastNote: 'Forecast values are not measurements. Solar output and day-ahead price are shown separately; matching times do not by themselves prove causation.',
-    flowTitle: 'Cross-border flows · right now',
+    flowTitle: 'Cross-border flows',
     tradeTitle: 'Import and export · 24 hours',
     perCountry: 'By neighbour',
     peakImport: 'Peak import',
@@ -144,6 +146,8 @@ const I18N = {
     exporting2: 'Export',
     tradeNote: 'Above zero Austria is a net importer, below it a net exporter. The shape follows the sun: overnight and early morning the country leans on imports, and around midday solar flips the balance.',
     balanceCol: 'Balance',
+    netBalance: 'Net balance',
+    sourceAge: 'source data about {h} old',
     impMixTitle: 'What the imported power is made of',
     impMix24: 'Import mix · 24 hours',
     fossilNuclear: 'Fossil and nuclear',
@@ -255,6 +259,19 @@ function renderStamp() {
   const p = document.getElementById('stamp');
   p.textContent = '';
   p.append(el('span', 'dot'), document.createTextNode(bits.join(' · ')));
+}
+
+function renderPanelStamp(id, timestamp) {
+  const node = document.getElementById(id);
+  if (!node || !timestamp) return;
+  const generated = Date.parse(DATA.generatedAt) / 1000;
+  const ageMinutes = Number.isFinite(generated) ? Math.max(0, Math.round((generated - timestamp) / 60)) : 0;
+  const age = ageMinutes >= 90
+    ? `${Math.floor(ageMinutes / 60)} ${t('hours')} ${ageMinutes % 60} ${t('mins')}`
+    : `${ageMinutes} ${t('mins')}`;
+  node.textContent = '';
+  node.append(el('span', 'dot'), document.createTextNode(
+    `${t('asOf')} ${dateFmt().format(new Date(timestamp * 1000))} · ${t('sourceAge').replace('{h}', age)}`));
 }
 
 /* ── stat tiles ───────────────────────────────────────────────────────── */
@@ -1036,6 +1053,7 @@ function renderTrade() {
   const tr = DATA.trade;
   if (!tr || !tr.t || tr.t.length < 2) { sec.hidden = true; return; }
   sec.hidden = false;
+  renderPanelStamp('tradeStamp', tr.at);
 
   // stats
   const pct = tr.steps ? Math.round(tr.importingSteps / tr.steps * 100) : 0;
@@ -1199,6 +1217,19 @@ function renderFlows() {
   const sec = document.getElementById('flowSection');
   if (!DATA.flows || !DATA.flows.length) { sec.hidden = true; return; }
   sec.hidden = false;
+
+  const at = Math.max(...DATA.flows.map(f => f.at || 0));
+  renderPanelStamp('flowStamp', at);
+
+  const net = DATA.flows.reduce((sum, flow) => sum + flow.mw, 0);
+  const netBox = document.getElementById('flowNet');
+  netBox.textContent = '';
+  const netCard = el('div', 'tstat');
+  const direction = Math.abs(net) < 20 ? t('balanced') : net > 0 ? t('netImport') : t('netExport');
+  const value = el('div', 'v', `${nf(Math.abs(net))}<small>MW</small>`);
+  if (Math.abs(net) >= 20) value.classList.add(net > 0 ? 'imp' : 'exp');
+  netCard.append(el('div', 'k', t('netBalance')), value, el('div', 'd', direction));
+  netBox.append(netCard);
 
   const box = document.getElementById('flows');
   box.textContent = '';

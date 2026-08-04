@@ -321,6 +321,7 @@ h2 {
 /* ── rivers ─────────────────────────────────────────────────────────── */
 
 #riverSection .stamp { margin: -8px 0 20px; }
+.panelstamp { margin: -8px 0 16px; }
 
 .rivers {
   display: grid;

@@ -109,6 +109,7 @@
 
     <section id="tradeSection">
       <h2 data-i18n="tradeTitle">Import und Export · 24 Stunden</h2>
+      <p class="stamp panelstamp" id="tradeStamp"></p>
       <div class="tradestats" id="tradeStats"></div>
       <div class="plotwrap">
         <div class="scroller"><svg class="chart" id="tradeChart" role="img"></svg></div>
@@ -135,7 +136,9 @@
     </section>
 
     <section id="flowSection">
-      <h2 data-i18n="flowTitle">Grenzüberschreitende Flüsse · jetzt</h2>
+      <h2 data-i18n="flowTitle">Grenzüberschreitende Flüsse</h2>
+      <p class="stamp panelstamp" id="flowStamp"></p>
+      <div class="tradestats compact" id="flowNet"></div>
       <div class="flowkey">
         <span><i style="background:var(--import)"></i><span data-i18n="importing">Import nach Österreich</span></span>
         <span><i style="background:var(--export)"></i><span data-i18n="exporting">Export aus Österreich</span></span>
