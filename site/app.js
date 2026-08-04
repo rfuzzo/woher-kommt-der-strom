@@ -87,7 +87,7 @@ const I18N = {
     balanced: 'ausgeglichen',
     asOf: 'Stand',
     lag: 'veröffentlicht mit rund {h} Verzögerung',
-    mixNote: 'Die Anteile beziehen sich auf die inländische Erzeugung, nicht auf den Verbrauch. Pumpspeicher zählt hier als Erzeugung — die Energie zum Hochpumpen stammt aus einem früheren Zeitpunkt.',
+    mixNote: 'Die Anteile zeigen inländische Erzeugung plus positive Nettoimporte als 100 % des verfügbaren Stroms zu diesem Zeitpunkt. Bei Nettoexport gibt es keinen Importanteil. Pumpspeicher zählt als Erzeugung — die Energie zum Hochpumpen stammt aus einem früheren Zeitpunkt.',
     dayNote: 'Die Flächen sind die inländische Erzeugung, die kräftige Linie ist die Last. Liegt die Linie unter den Flächen, exportiert Österreich mehr, als es importiert.',
     flowNote: 'Physikalische Flüsse an den Kuppelstellen, nicht Handelsgeschäfte. Strom fließt auch durch Österreich hindurch, ohne hier verbraucht zu werden.',
     sources: 'Erzeugung, Last, Grenzflüsse und Preis: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), gespeist aus <a href="https://transparency.entsoe.eu/">ENTSO-E</a> und <a href="https://www.apg.at/">APG</a>. Abflussdaten: <a href="https://ehyd.gv.at">ehyd.gv.at</a>, Hydrographie Österreich, CC BY 4.0.',
@@ -157,7 +157,7 @@ const I18N = {
     balanced: 'balanced',
     asOf: 'As of',
     lag: 'published about {h} later',
-    mixNote: 'Shares are of domestic generation, not of consumption. Pumped storage counts as generation here — the energy used to pump the water uphill came from an earlier moment.',
+    mixNote: 'Shares show domestic generation plus positive net imports as 100% of the electricity available at that moment. During net export, the import share is zero. Pumped storage counts as generation — the energy used to pump the water uphill came from an earlier moment.',
     dayNote: 'The areas are domestic generation; the heavy line is load. Where the line sits below the areas, Austria is exporting more than it imports.',
     flowNote: 'Physical flows across the interconnectors, not commercial trades. Power also transits Austria without being consumed here.',
     sources: 'Generation, load, cross-border flows and price: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), fed from <a href="https://transparency.entsoe.eu/">ENTSO-E</a> and <a href="https://www.apg.at/">APG</a>.',
@@ -262,7 +262,20 @@ function orderedGroups() {
 }
 
 function renderMix() {
-  const groups = orderedGroups();
+  const domestic = orderedGroups();
+  const importedMw = Math.max(DATA.now.netImport || 0, 0);
+  const supplyMw = DATA.now.generation + importedMw;
+  const groups = [...domestic.map(g => ({
+    ...g,
+    pct: supplyMw ? g.mw / supplyMw * 100 : 0,
+  }))];
+  groups.push({
+    key: 'import',
+    de: t('importing2'),
+    en: t('importing2'),
+    mw: importedMw,
+    pct: supplyMw ? importedMw / supplyMw * 100 : 0,
+  });
   const bar = document.getElementById('sharebar');
   const leg = document.getElementById('legend');
   bar.textContent = '';
@@ -294,7 +307,7 @@ function renderMix() {
   document.getElementById('mixTable').innerHTML =
     `<table><caption>${t('mixTitle')} — ${dateFmt().format(new Date(DATA.dataAt * 1000))}</caption>
      <thead><tr><th>${t('source')}</th><th class="n">MW</th><th class="n">${t('share')} %</th></tr></thead>
-     <tbody>${rows}<tr><td><strong>${t('total')}</strong></td><td class="n"><strong>${nf(DATA.now.generation)}</strong></td><td class="n">100</td></tr></tbody></table>`;
+     <tbody>${rows}<tr><td><strong>${t('total')}</strong></td><td class="n"><strong>${nf(supplyMw)}</strong></td><td class="n">100</td></tr></tbody></table>`;
 }
 
 /* ── 24 h stacked area + load line ────────────────────────────────────── */
