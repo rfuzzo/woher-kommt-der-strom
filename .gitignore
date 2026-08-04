@@ -1,0 +1,6 @@
+# Rebuilt by CI on every run; never committed.
+site/data.json
+
+.DS_Store
+__pycache__/
+*.pyc

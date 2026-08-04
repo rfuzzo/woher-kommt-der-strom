@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="de" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Woher kommt der Strom? — Österreichs Stromnetz</title>
+<meta name="description" content="Woher Österreichs Strom gerade kommt: Erzeugungsmix, Tagesverlauf und Grenzflüsse, aus offenen Daten von Energy-Charts (Fraunhofer ISE).">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="topline">
+      <div>
+        <h1 data-i18n="title">Woher kommt der Strom?</h1>
+        <p class="sub" data-i18n="sub">Österreichs Erzeugungsmix, Tagesverlauf und Grenzflüsse — aus offenen Daten.</p>
+      </div>
+      <div class="controls">
+        <button id="lang" type="button">EN</button>
+        <button id="theme" type="button" title="Hell / dunkel">◐</button>
+      </div>
+    </div>
+    <p class="stamp" id="stamp"></p>
+  </header>
+
+  <div id="app" hidden>
+
+    <div class="tiles" id="tiles"></div>
+
+    <section>
+      <h2 data-i18n="mixTitle">Woher der Strom gerade kommt</h2>
+      <div class="sharebar" id="sharebar"></div>
+      <div class="legend" id="legend"></div>
+      <p class="note" data-i18n="mixNote"></p>
+      <details>
+        <summary data-i18n="tableToggle">Werte als Tabelle</summary>
+        <div id="mixTable"></div>
+      </details>
+    </section>
+
+    <section>
+      <h2 data-i18n="dayTitle">Erzeugung nach Quelle · 24 Stunden</h2>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="dayChart" role="img"></svg></div>
+        <div class="tip" id="dayTip"></div>
+      </div>
+      <div class="legend" id="dayLegend" style="margin-top:16px"></div>
+      <p class="note" data-i18n="dayNote"></p>
+    </section>
+
+    <section id="flowSection">
+      <h2 data-i18n="flowTitle">Grenzüberschreitende Flüsse</h2>
+      <div class="flowkey">
+        <span><i style="background:var(--import)"></i><span data-i18n="importing">Import nach Österreich</span></span>
+        <span><i style="background:var(--export)"></i><span data-i18n="exporting">Export aus Österreich</span></span>
+      </div>
+      <div class="flows" id="flows"></div>
+      <p class="note" data-i18n="flowNote"></p>
+    </section>
+
+    <footer>
+      <p id="srcLine"></p>
+      <p id="licLine"></p>
+      <p data-i18n="credit"></p>
+    </footer>
+  </div>
+
+  <div id="error" class="err" hidden></div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

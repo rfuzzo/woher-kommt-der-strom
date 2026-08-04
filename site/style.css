@@ -1,0 +1,378 @@
+/* Palette tokens are the validated reference instance — see README.
+   Series slots 1-6 in this exact order cleared the CVD, normal-vision and
+   band checks in both modes. The stack order in app.js matches; changing
+   either without re-running the validator breaks the guarantee. */
+
+:root {
+  color-scheme: light;
+
+  --surface:        #fcfcfb;
+  --plane:          #f9f9f7;
+  --ink:            #0b0b0b;
+  --ink-2:          #52514e;
+  --ink-muted:      #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --hairline:       rgba(11, 11, 11, 0.10);
+
+  --hydro:          #2a78d6;
+  --fossil:         #eb6834;
+  --wind:           #1baf7a;
+  --solar:          #eda100;
+  --pumped:         #e87ba4;
+  --biomass:        #008300;
+  --other:          #898781;
+
+  --import:         #2a78d6;
+  --export:         #e34948;
+
+  --radius:         10px;
+  --gap:            2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface:     #1a1a19;
+    --plane:       #0d0d0d;
+    --ink:         #ffffff;
+    --ink-2:       #c3c2b7;
+    --ink-muted:   #898781;
+    --grid:        #2c2c2a;
+    --axis:        #383835;
+    --hairline:    rgba(255, 255, 255, 0.10);
+
+    --hydro:       #3987e5;
+    --fossil:      #d95926;
+    --wind:        #199e70;
+    --solar:       #c98500;
+    --pumped:      #d55181;
+    --biomass:     #008300;
+    --other:       #898781;
+
+    --import:      #3987e5;
+    --export:      #e66767;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface:     #1a1a19;
+  --plane:       #0d0d0d;
+  --ink:         #ffffff;
+  --ink-2:       #c3c2b7;
+  --ink-muted:   #898781;
+  --grid:        #2c2c2a;
+  --axis:        #383835;
+  --hairline:    rgba(255, 255, 255, 0.10);
+
+  --hydro:       #3987e5;
+  --fossil:      #d95926;
+  --wind:        #199e70;
+  --solar:       #c98500;
+  --pumped:      #d55181;
+  --biomass:     #008300;
+  --other:       #898781;
+
+  --import:      #3987e5;
+  --export:      #e66767;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font: 400 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+/* ── header ─────────────────────────────────────────────────────────── */
+
+header { margin-bottom: 28px; }
+
+.topline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+h1 {
+  font-size: clamp(26px, 4.2vw, 40px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+  font-weight: 650;
+}
+
+.sub {
+  color: var(--ink-2);
+  font-size: 15px;
+  margin: 0;
+  max-width: 62ch;
+}
+
+.controls { display: flex; gap: 6px; flex-shrink: 0; }
+
+.controls button {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.controls button[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--axis);
+  font-weight: 600;
+}
+
+.stamp {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* Inline rather than a flex item, so a wrapping stamp does not orphan the
+   dot on a line of its own. */
+.dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--biomass);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+/* ── cards ──────────────────────────────────────────────────────────── */
+
+section {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+  font-weight: 600;
+  margin: 0 0 18px;
+}
+
+.note {
+  color: var(--ink-2);
+  font-size: 14px;
+  margin: 16px 0 0;
+  max-width: 68ch;
+}
+
+/* ── stat tiles ─────────────────────────────────────────────────────── */
+
+/* Separators are borders on the tiles, not grid gaps over a tinted
+   container — an incomplete last row then reads as plain surface instead of
+   an odd empty cell. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.tile {
+  padding: 18px 20px;
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tile .k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.tile .v {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+  line-height: 1.1;
+}
+
+.tile .v small { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+.tile .d { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+
+/* ── share bar ──────────────────────────────────────────────────────── */
+
+.sharebar {
+  display: flex;
+  width: 100%;
+  height: 46px;
+  gap: var(--gap);
+  margin-bottom: 18px;
+}
+
+.sharebar span {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 2px;
+  transition: opacity .15s;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+  gap: 2px 30px;
+}
+
+.legend .row {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 14px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+#dayLegend .row { border-bottom: none; }
+
+.legend .sw {
+  width: 11px; height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transform: translateY(1px);
+}
+
+.legend .nm { color: var(--ink); }
+.legend .mw { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.legend .pc { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
+
+/* ── charts ─────────────────────────────────────────────────────────── */
+
+.chart { width: 100%; display: block; overflow: visible; }
+.scroller { overflow-x: auto; }
+.chart text { font: 11px system-ui, -apple-system, sans-serif; fill: var(--ink-muted); }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .axisline { stroke: var(--axis); stroke-width: 1; }
+.chart .loadline { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.chart .cursor { stroke: var(--axis); stroke-width: 1; }
+
+.tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .16);
+  min-width: 178px;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity .1s;
+}
+
+.tip.on { opacity: 1; }
+.tip .t { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.tip .r { display: flex; align-items: center; gap: 7px; padding: 1px 0; }
+.tip .r .sw { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.tip .r .v { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.tip .r.tot { border-top: 1px solid var(--hairline); margin-top: 5px; padding-top: 5px; font-weight: 600; }
+.tip .r.tot .v { color: var(--ink); }
+
+.plotwrap { position: relative; }
+
+/* ── flows ──────────────────────────────────────────────────────────── */
+
+.flows { display: flex; flex-direction: column; gap: 3px; }
+
+.flowrow {
+  display: grid;
+  grid-template-columns: 128px 1fr 88px;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  padding: 3px 0;
+}
+
+.flowrow .nm { color: var(--ink); }
+.flowrow .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
+.flowtrack { position: relative; height: 20px; }
+.flowtrack .zero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--axis); left: 50%; }
+.flowtrack .bar { position: absolute; top: 3px; height: 14px; border-radius: 3px; }
+
+.flowkey { display: flex; gap: 18px; font-size: 13px; color: var(--ink-2); margin-bottom: 14px; }
+.flowkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+
+/* ── table view ─────────────────────────────────────────────────────── */
+
+details { margin-top: 18px; }
+
+summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-2);
+  padding: 5px 0;
+}
+
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+caption { text-align: left; font-size: 13px; color: var(--ink-muted); padding-bottom: 8px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); font-weight: 600; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── footer ─────────────────────────────────────────────────────────── */
+
+footer {
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--ink-muted);
+  line-height: 1.7;
+}
+
+footer a { color: var(--ink-2); }
+footer p { margin: 0 0 9px; max-width: 76ch; }
+
+.err {
+  background: var(--surface);
+  border: 1px solid var(--export);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .wrap { padding: 22px 14px 48px; }
+  section { padding: 17px 15px; }
+  .flowrow { grid-template-columns: 92px 1fr 76px; gap: 8px; font-size: 13px; }
+  .tile .v { font-size: 25px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

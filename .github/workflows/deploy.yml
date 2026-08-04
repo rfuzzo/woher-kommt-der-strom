@@ -1,0 +1,60 @@
+name: Build and deploy
+
+on:
+  schedule:
+    # Every 30 minutes. Energy-Charts publishes settled data roughly 1-3 h
+    # behind real time, so refreshing faster buys nothing.
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Let a running deploy finish rather than piling up scheduled runs.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch Austrian grid data
+        run: python scripts/fetch_data.py
+
+      - name: Check the data actually landed
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          d = json.loads(pathlib.Path("site/data.json").read_text())
+          gen = d["now"]["generation"]
+          if gen <= 0:
+              sys.exit(f"refusing to publish: generation is {gen}")
+          if not d.get("groups"):
+              sys.exit("refusing to publish: no generation groups")
+          print(f"ok - {gen:.0f} MW across {len(d['groups'])} groups")
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
