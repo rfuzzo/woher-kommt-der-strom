@@ -46,6 +46,20 @@ const I18N = {
     forecastPeak: 'Höchstwert',
     forecastLow: 'Tiefstpreis',
     forecastNote: 'Prognosewerte sind keine Messwerte. Die Photovoltaik-Prognose und der Day-Ahead-Preis werden getrennt gezeigt; gleiche Zeitpunkte bedeuten nicht automatisch einen kausalen Zusammenhang.',
+    balanceTitle: 'Energiebilanz · 24 Stunden',
+    balanceGap: 'Nicht aufgelöste Differenz',
+    balanceMean: 'Ø absolute Differenz',
+    balanceNote: 'Rechnung: inländische Erzeugung + kommerzieller Nettoimport − Last − Pumpleistung. Das erklärt den großen Mittagsüberschuss weitgehend. Die verbleibende Differenz ist kein eigener Energiefluss: Erzeugung, Handel und Last haben unterschiedliche Abgrenzungen und Veröffentlichungsstände; auch Netzverluste spielen hinein. Deshalb wird sie gezeigt, nicht künstlich auf null gerechnet.',
+    storageTitle: 'Pumpspeicher und Strompreis · 24 Stunden',
+    storageOperation: 'Speicherbetrieb',
+    price24: 'Day-Ahead-Preis',
+    storageGenerating: 'erzeugt',
+    storagePumping: 'pumpt',
+    storageIdle: 'nahezu still',
+    currentMode: 'Aktueller Betrieb',
+    peakGeneration: 'Höchste Erzeugung',
+    peakPumping: 'Höchste Pumpleistung',
+    storageNote: 'Oben: Erzeugung aus dem Speicher über null, Pumpleistung darunter. Unten: der Preis auf einer eigenen Skala. Die zeitliche Nähe ist aufschlussreich, beweist aber allein noch keine Arbitrage oder Kausalität.',
     flowTitle: 'Grenzüberschreitende Flüsse',
     tradeTitle: 'Import und Export · 24 Stunden',
     perCountry: 'Je Nachbarland',
@@ -134,6 +148,20 @@ const I18N = {
     forecastPeak: 'Peak',
     forecastLow: 'Lowest price',
     forecastNote: 'Forecast values are not measurements. Solar output and day-ahead price are shown separately; matching times do not by themselves prove causation.',
+    balanceTitle: 'Energy balance · 24 hours',
+    balanceGap: 'Unreconciled difference',
+    balanceMean: 'Average absolute difference',
+    balanceNote: 'Equation: domestic generation + commercial net imports − load − pumping demand. That accounts for most of the apparent midday surplus. The remaining difference is not a separate energy flow: generation, trading and load use different scopes and publication schedules, and grid losses also contribute. It is shown rather than artificially forced to zero.',
+    storageTitle: 'Pumped storage and electricity price · 24 hours',
+    storageOperation: 'Storage operation',
+    price24: 'Day-ahead price',
+    storageGenerating: 'generating',
+    storagePumping: 'pumping',
+    storageIdle: 'nearly idle',
+    currentMode: 'Current operation',
+    peakGeneration: 'Peak generation',
+    peakPumping: 'Peak pumping',
+    storageNote: 'Top: storage generation above zero, pumping demand below. Bottom: price on its own scale. Timing is informative, but by itself does not prove arbitrage or causation.',
     flowTitle: 'Cross-border flows',
     tradeTitle: 'Import and export · 24 hours',
     perCountry: 'By neighbour',
@@ -615,6 +643,86 @@ function renderForecast() {
     document.getElementById('priceForecastStat').textContent = `${t('forecastLow')}: ${nf(low, 1)} €/MWh · ${dateFmt().format(new Date(f.price.t[i] * 1000))}`;
     drawForecastLine(document.getElementById('priceForecastChart'), f.price.t, f.price.eur, 'var(--hydro)', '€/MWh');
   }
+}
+
+function renderBalance() {
+  const b = DATA.balance, section = document.getElementById('balanceSection');
+  if (!b || !b.series || b.series.length < 2) { section.hidden = true; return; }
+  section.hidden = false;
+  const equation = document.getElementById('balanceEquation');
+  equation.textContent = '';
+  const terms = [
+    { label: t('generation'), value: b.generation },
+    { op: b.netImport >= 0 ? '+' : '−', label: b.netImport >= 0 ? t('netImport') : t('netExport'), value: Math.abs(b.netImport) },
+    { op: '−', label: t('load'), value: b.load },
+    { op: '−', label: t('storagePumping'), value: b.pumping },
+    { op: '=', label: t('balanceGap'), value: b.gap, gap: true },
+  ];
+  for (const term of terms) {
+    if (term.op) equation.append(el('div', 'eqop', term.op));
+    const card = el('div', `eqterm${term.gap ? ' gap' : ''}`);
+    card.append(el('div', 'k', term.label), el('div', 'v', `${term.value > 0 && term.gap ? '+' : ''}${nf(term.value)}<small>MW</small>`));
+    equation.append(card);
+  }
+  const mean = el('div', 'balanceMean', `${t('balanceMean')}: ${nf(b.meanAbsGap)} MW`);
+  equation.append(mean);
+
+  const svg = document.getElementById('balanceChart'), N = b.series.length;
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320), H = 210;
+  const P = { t: 24, r: 14, b: 26, l: 48 }, iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const mag = Math.max(...b.series.map(Math.abs), 100);
+  const step = niceStep(mag, 4), top = Math.ceil(mag / step) * step;
+  const x = i => P.l + i / (N - 1) * iw, y = v => P.t + ih / 2 - v / top * ih / 2;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.textContent = '';
+  for (let v = -top; v <= top; v += step) {
+    svg.append(svgEl('line', { class: v === 0 ? 'axisline' : 'gridline', x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }));
+    const lab = svgEl('text', { x: P.l - 7, y: y(v) + 4, 'text-anchor': 'end' }); lab.textContent = nf(v); svg.append(lab);
+  }
+  const u = svgEl('text', { x: P.l - 7, y: P.t - 9, 'text-anchor': 'end' }); u.textContent = 'MW'; svg.append(u);
+  const line = b.series.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  svg.append(svgEl('path', { d: `${line}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--pumped)', 'fill-opacity': .16 }));
+  svg.append(svgEl('path', { d: line, fill: 'none', stroke: 'var(--pumped)', 'stroke-width': 2 }));
+  const fmt = clockFmt(), every = Math.max(1, Math.round(N / 8));
+  b.t.forEach((ts, i) => { if (i % every && i !== N - 1) return; const lab = svgEl('text', { x: x(i), y: H - 7, 'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle' }); lab.textContent = fmt.format(new Date(ts * 1000)); svg.append(lab); });
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 }); svg.append(cursor);
+  const tip = document.getElementById('balanceTip'), wrap = svg.closest('.plotwrap');
+  const show = ev => { const rect = svg.getBoundingClientRect(); let i = Math.round((((ev.clientX - rect.left) / rect.width * W) - P.l) / iw * (N - 1)); i = Math.max(0, Math.min(N - 1, i)); cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('opacity', 1); const v = b.series[i]; tip.innerHTML = `<div class="t">${dateFmt().format(new Date(b.t[i] * 1000))}</div><div class="r tot"><span class="sw" style="background:var(--pumped)"></span>${t('balanceGap')}<span class="v">${v > 0 ? '+' : ''}${nf(v)} MW</span></div>`; tip.classList.add('on'); const wb = wrap.getBoundingClientRect(); tip.style.left = Math.min(Math.max(x(i) / W * rect.width + rect.left - wb.left + 12, 0), wb.width - tip.offsetWidth) + 'px'; tip.style.top = '5px'; };
+  svg.addEventListener('pointermove', show); svg.addEventListener('pointerdown', show); svg.addEventListener('pointerleave', () => { tip.classList.remove('on'); cursor.setAttribute('opacity', 0); });
+}
+
+function renderStorage() {
+  const s = DATA.storage, section = document.getElementById('storageSection');
+  if (!s || !s.t || s.t.length < 2) { section.hidden = true; return; }
+  section.hidden = false;
+  const mode = s.nowPumping > 10 ? `${t('storagePumping')} · ${nf(s.nowPumping)} MW`
+    : s.nowGeneration > 10 ? `${t('storageGenerating')} · ${nf(s.nowGeneration)} MW` : t('storageIdle');
+  const stats = [
+    { k: t('currentMode'), v: mode },
+    { k: t('peakGeneration'), v: `${nf(s.peakGeneration)}<small>MW</small>` },
+    { k: t('peakPumping'), v: `${nf(s.peakPumping)}<small>MW</small>` },
+  ];
+  const box = document.getElementById('storageStats'); box.textContent = '';
+  for (const item of stats) { const card = el('div', 'tstat'); card.append(el('div', 'k', item.k), el('div', 'v', item.v)); box.append(card); }
+
+  const svg = document.getElementById('storageChart'), N = s.t.length;
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320), H = 230;
+  const P = { t: 24, r: 14, b: 26, l: 48 }, iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const mag = Math.max(...s.generation, ...s.pumping, 100), step = niceStep(mag, 4), top = Math.ceil(mag / step) * step;
+  const x = i => P.l + i / (N - 1) * iw, y = v => P.t + ih / 2 - v / top * ih / 2;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.textContent = '';
+  for (let v = -top; v <= top; v += step) { svg.append(svgEl('line', { class: v === 0 ? 'axisline' : 'gridline', x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) })); const lab = svgEl('text', { x: P.l - 7, y: y(v) + 4, 'text-anchor': 'end' }); lab.textContent = nf(v); svg.append(lab); }
+  const u = svgEl('text', { x: P.l - 7, y: P.t - 9, 'text-anchor': 'end' }); u.textContent = 'MW'; svg.append(u);
+  const genLine = s.generation.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  const pumpLine = s.pumping.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(-v)}`).join('');
+  svg.append(svgEl('path', { d: `${genLine}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--export)', 'fill-opacity': .75 }));
+  svg.append(svgEl('path', { d: `${pumpLine}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--import)', 'fill-opacity': .75 }));
+  const fmt = clockFmt(), every = Math.max(1, Math.round(N / 8));
+  s.t.forEach((ts, i) => { if (i % every && i !== N - 1) return; const lab = svgEl('text', { x: x(i), y: H - 7, 'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle' }); lab.textContent = fmt.format(new Date(ts * 1000)); svg.append(lab); });
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 }); svg.append(cursor);
+  const tip = document.getElementById('storageTip'), wrap = svg.closest('.plotwrap');
+  const show = ev => { const rect = svg.getBoundingClientRect(); let i = Math.round((((ev.clientX - rect.left) / rect.width * W) - P.l) / iw * (N - 1)); i = Math.max(0, Math.min(N - 1, i)); cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('opacity', 1); tip.innerHTML = `<div class="t">${dateFmt().format(new Date(s.t[i] * 1000))}</div><div class="r"><span class="sw" style="background:var(--export)"></span>${t('storageGenerating')}<span class="v">${nf(s.generation[i])} MW</span></div><div class="r"><span class="sw" style="background:var(--import)"></span>${t('storagePumping')}<span class="v">${nf(s.pumping[i])} MW</span></div><div class="r tot"><span class="sw" style="background:var(--hydro)"></span>${t('price')}<span class="v">${nf(s.price[i], 1)} €/MWh</span></div>`; tip.classList.add('on'); const wb = wrap.getBoundingClientRect(); tip.style.left = Math.min(Math.max(x(i) / W * rect.width + rect.left - wb.left + 12, 0), wb.width - tip.offsetWidth) + 'px'; tip.style.top = '5px'; };
+  svg.addEventListener('pointermove', show); svg.addEventListener('pointerdown', show); svg.addEventListener('pointerleave', () => { tip.classList.remove('on'); cursor.setAttribute('opacity', 0); });
+  drawForecastLine(document.getElementById('storagePriceChart'), s.t, s.price, 'var(--hydro)', '€/MWh');
 }
 
 /* ── what the imports are made of ─────────────────────────────────────── */
@@ -1280,8 +1388,10 @@ function renderAll() {
   renderRangeButtons();
   renderDay();
   renderComparison();
+  renderBalance();
   renderDependency();
   renderForecast();
+  renderStorage();
   renderTrade();
   renderImportMix();
   renderMoney();
@@ -1303,8 +1413,10 @@ document.getElementById('theme').addEventListener('click', () => {
   document.documentElement.dataset.theme = dark ? 'light' : 'dark';
   localStorage.setItem('theme', document.documentElement.dataset.theme);
   renderDay();
+  renderBalance();
   renderDependency();
   renderForecast();
+  renderStorage();
   renderTrade();
   renderImportMix();
   renderMoney();
@@ -1325,7 +1437,7 @@ if (localStorage.getItem('theme')) {
 let resizeTimer;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (DATA) { renderDay(); renderDependency(); renderForecast(); renderTrade(); } }, 150);
+  resizeTimer = setTimeout(() => { if (DATA) { renderDay(); renderBalance(); renderDependency(); renderForecast(); renderStorage(); renderTrade(); } }, 150);
 });
 
 fetch('data.json?' + Date.now())

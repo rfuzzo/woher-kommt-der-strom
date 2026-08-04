@@ -362,6 +362,8 @@ def main() -> None:
     week = list(range(week_lo, now_i + 1))
 
     gen_now = sum(group_series[k][now_i] for k, _, _, _ in GROUPS)
+    balance_series = [sum(group_series[k][i] for k, _, _, _ in GROUPS)
+                      + trading[i] - load[i] - abs(pumping[i]) for i in win]
 
     groups_out = [{
         "key": key,
@@ -393,6 +395,16 @@ def main() -> None:
             "t": [times[i] for i in win],
             "load": [r1(load[i]) for i in win],
             "netImport": [r1(trading[i]) for i in win],
+        },
+        "balance": {
+            "t": [times[i] for i in win],
+            "generation": r1(gen_now),
+            "netImport": r1(trading[now_i]),
+            "load": r1(load[now_i]),
+            "gap": r1(balance_series[-1]),
+            "series": [r1(v) for v in balance_series],
+            "meanAbsGap": r1(sum(abs(v) for v in balance_series) / len(balance_series)),
+            "pumping": r1(abs(pumping[now_i])),
         },
         "history": {
             "t": [times[i] for i in week],
@@ -541,6 +553,22 @@ def main() -> None:
             # all struck at spot.
             by_price = dict(pts)
             hours = step_s / 3600
+
+            storage_indices = [i for i in win if times[i] in by_price]
+            if storage_indices:
+                storage_generation = [group_series["pumped"][i] for i in storage_indices]
+                storage_pumping = [abs(pumping[i]) for i in storage_indices]
+                out["storage"] = {
+                    "t": [times[i] for i in storage_indices],
+                    "generation": [r1(v) for v in storage_generation],
+                    "pumping": [r1(v) for v in storage_pumping],
+                    "price": [r1(by_price[times[i]]) for i in storage_indices],
+                    "nowGeneration": r1(storage_generation[-1]),
+                    "nowPumping": r1(storage_pumping[-1]),
+                    "peakGeneration": r1(max(storage_generation)),
+                    "peakPumping": r1(max(storage_pumping)),
+                }
+
             cost = rev = 0.0
             imp_mwh = exp_mwh = 0.0
             mt, cum = [], []

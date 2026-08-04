@@ -458,6 +458,27 @@ h2 {
 .forecastgrid .subhead { margin-top: 0; }
 .forecaststat { color: var(--ink-2); font-size: 13px; margin: -5px 0 8px; }
 
+.balanceeq {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.eqterm {
+  min-width: 145px;
+  flex: 1 1 145px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.eqterm.gap { border-color: var(--pumped); }
+.eqterm .k { color: var(--ink-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.eqterm .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.eqterm .v small { font-size: 12px; color: var(--ink-2); margin-left: 3px; }
+.eqop { align-self: center; font-size: 22px; color: var(--ink-muted); }
+.balanceMean { width: 100%; color: var(--ink-2); font-size: 12px; }
+
 .subhead {
   font-size: 12px;
   text-transform: uppercase;

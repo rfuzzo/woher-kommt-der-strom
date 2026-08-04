@@ -2,7 +2,8 @@
 
 A small, dependency-free page showing where Austria's electricity is coming
 from: the current mix, seven-day history and comparisons, import dependency,
-cross-border flows, and the next day's solar and price outlook.
+cross-border flows, pumped-storage operation, the energy balance, and the next
+day's solar and price outlook.
 
 **→ [rfuzzo.github.io/woher-kommt-der-strom](https://rfuzzo.github.io/woher-kommt-der-strom/)**
 
@@ -121,10 +122,11 @@ but are not identical.
   response's declared `unit` rather than assuming.
 - **Use `available_until`, not the last row.** The API pads the tail with
   intervals it has not settled yet.
-- **Generation + imports does not equal load.** Different scopes, plus
-  pumping and network losses. The 24 h chart stacks generation and draws load
-  as a separate line instead of forcing a reconciliation that the source data
-  does not support.
+- **Generation + imports does not equal load.** The balance panel explicitly
+  subtracts pumping demand, which explains most of the midday difference. The
+  remaining gap is left visible because generation, trading and load have
+  different scopes and publication schedules, with grid losses on top; it is
+  not forced to reconcile.
 - **The stack order is a validated order.** The seven groups in `ORDER`
   (`app.js`) and `GROUPS` (`fetch_data.py`) map to palette slots that were
   checked for colourblind separation and contrast in both light and dark mode.
