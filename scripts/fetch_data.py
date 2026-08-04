@@ -12,7 +12,9 @@ English display names or assumed about scale.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -282,6 +284,30 @@ def add_import_mix(out: dict, win: list, times: list,
     }
 
 
+def stamp_assets() -> None:
+    """Rewrite app.js / style.css references in index.html to carry a content
+    hash.
+
+    Pages serves assets with `cache-control: max-age=600`, but data.json is
+    fetched with a cache-buster and so is always current. Without this, a
+    visitor in the ten minutes after a deploy runs the previous JS against
+    the new data — fine for a cosmetic change, broken if the shape moved.
+    Hashing the URL makes new code and new data arrive together.
+    """
+    index = OUT.parent / "index.html"
+    if not index.exists():
+        return
+    html = index.read_text(encoding="utf-8")
+    for name in ("app.js", "style.css"):
+        path = OUT.parent / name
+        if not path.exists():
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()[:10]
+        html = re.sub(rf'{re.escape(name)}(\?v=[0-9a-f]+)?',
+                      f"{name}?v={digest}", html)
+    index.write_text(html, encoding="utf-8")
+
+
 def main() -> None:
     end = datetime.now(timezone.utc).date() + timedelta(days=1)
     start = end - timedelta(days=FETCH_DAYS + 1)
@@ -504,6 +530,7 @@ def main() -> None:
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, separators=(",", ":")) + "\n", encoding="utf-8")
+    stamp_assets()
     stamp = datetime.fromtimestamp(out["dataAt"], timezone.utc)
     print(f"wrote {OUT} — data at {stamp:%Y-%m-%d %H:%M} UTC, "
           f"{out['now']['generation']:.0f} MW generation, {len(win)} samples")
