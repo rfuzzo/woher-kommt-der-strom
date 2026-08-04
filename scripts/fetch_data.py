@@ -31,7 +31,7 @@ OUT = Path(__file__).resolve().parent.parent / "site" / "data.json"
 HOURS_BACK = 24
 # Generation data lags roughly an hour, so over-fetch and trim to the last
 # complete sample.
-FETCH_DAYS = 2
+FETCH_DAYS = 8
 
 # Energy-Charts series ids -> the seven groups the page draws, in the order
 # they stack (bottom to top). That order is also the colour order and it is
@@ -357,6 +357,10 @@ def main() -> None:
     lo = max(0, now_i - span + 1)
     win = list(range(lo, now_i + 1))
 
+    week_span = int(7 * 24 * 3600 / step_s)
+    week_lo = max(0, now_i - week_span + 1)
+    week = list(range(week_lo, now_i + 1))
+
     gen_now = sum(group_series[k][now_i] for k, _, _, _ in GROUPS)
 
     groups_out = [{
@@ -390,8 +394,51 @@ def main() -> None:
             "load": [r1(load[i]) for i in win],
             "netImport": [r1(trading[i]) for i in win],
         },
+        "history": {
+            "t": [times[i] for i in week],
+            "load": [r1(load[i]) for i in week],
+            "netImport": [r1(trading[i]) for i in week],
+            "importShare": [r1(100 * max(trading[i], 0.0) / load[i])
+                            if load[i] > 0 else 0.0 for i in week],
+            "groups": [{
+                "key": key, "de": de, "en": en,
+                "series": [r1(group_series[key][i]) for i in week],
+            } for key, de, en, _ in GROUPS],
+        },
     }
 
+    def period_metrics(indices: list[int]) -> dict:
+        generation = sum(sum(group_series[k][i] for k, _, _, _ in GROUPS)
+                         for i in indices)
+        renewable = sum(sum(group_series[k][i]
+                            for k in ("hydro", "wind", "solar", "biomass"))
+                        for i in indices)
+        demand = sum(load[i] for i in indices)
+        imports = sum(max(trading[i], 0.0) for i in indices)
+        return {
+            "avgLoad": sum(load[i] for i in indices) / len(indices),
+            "renewablePct": 100 * renewable / generation if generation else 0.0,
+            "importShare": 100 * imports / demand if demand else 0.0,
+        }
+
+    blocks = []
+    samples_per_day = max(1, int(24 * 3600 / step_s))
+    for offset in range(7):
+        hi = now_i - offset * samples_per_day
+        lo_block = max(0, hi - samples_per_day + 1)
+        block = list(range(lo_block, hi + 1))
+        if len(block) == samples_per_day:
+            blocks.append(period_metrics(block))
+    if blocks:
+        previous = blocks[1:] or blocks
+        out["comparison"] = {
+            "current": {k: r1(v) for k, v in blocks[0].items()},
+            "baseline": {k: r1(sum(b[k] for b in previous) / len(previous))
+                         for k in blocks[0]},
+            "days": len(previous),
+        }
+
+    future_prices = []
     try:
         flows = get("cbpf", country=COUNTRY, start=start, end=end)
         fscale = to_mw(flows)
@@ -484,6 +531,8 @@ def main() -> None:
                 "eur": [r1(p[1]) for p in recent],
                 "now": r1(current[1]),
             }
+            future_prices = [(t, v) for t, v in pts
+                             if out["dataAt"] < t <= out["dataAt"] + 24 * 3600]
 
             # What the cross-border balance was worth at day-ahead prices.
             # Commercial trading is used rather than physical flows: money
@@ -524,6 +573,29 @@ def main() -> None:
                 }
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
         print(f"WARNING: day-ahead price unavailable: {e}", file=sys.stderr)
+
+    try:
+        forecast_end = end + timedelta(days=1)
+        forecast = get("public_power_forecast", country=COUNTRY,
+                       start=end - timedelta(days=1), end=forecast_end)
+        fct_times, fct_cols = columns(forecast)
+        fct_scale = to_mw(forecast)
+        solar_future = [(ts, float(v) * fct_scale)
+                        for ts, v in zip(fct_times, fct_cols.get("solar", []))
+                        if v is not None and out["dataAt"] < ts <= out["dataAt"] + 24 * 3600]
+        if solar_future or future_prices:
+            out["forecast"] = {
+                "solar": {
+                    "t": [t for t, _ in solar_future],
+                    "mw": [r1(v) for _, v in solar_future],
+                },
+                "price": {
+                    "t": [t for t, _ in future_prices],
+                    "eur": [r1(v) for _, v in future_prices],
+                },
+            }
+    except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
+        print(f"WARNING: forecast unavailable: {e}", file=sys.stderr)
 
     add_import_mix(out, win, times, group_series, load)
     out.pop("_cbpfRaw", None)

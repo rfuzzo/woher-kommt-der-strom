@@ -6,7 +6,7 @@
 <title>Woher kommt der Strom? — Österreichs Stromnetz</title>
 <meta name="description" content="Woher Österreichs Strom gerade kommt: Erzeugungsmix, Tagesverlauf und Grenzflüsse, aus offenen Daten von Energy-Charts (Fraunhofer ISE).">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="style.css?v=442eb28cad">
+<link rel="stylesheet" href="style.css?v=60aa63f2b4">
 </head>
 <body>
 <div class="wrap">
@@ -33,6 +33,8 @@
       <h2 data-i18n="mixTitle">Woher der Strom gerade kommt</h2>
       <div class="sharebar" id="sharebar"></div>
       <div class="legend" id="legend"></div>
+      <h3 class="subhead" data-i18n="cleanScoreTitle">Saubere Versorgung · 24 Stunden</h3>
+      <div class="tradestats compact" id="cleanScore"></div>
       <p class="note" data-i18n="mixNote"></p>
       <details>
         <summary data-i18n="tableToggle">Werte als Tabelle</summary>
@@ -41,13 +43,51 @@
     </section>
 
     <section>
-      <h2 data-i18n="dayTitle">Erzeugung nach Quelle · 24 Stunden</h2>
+      <div class="sectionhead">
+        <h2 data-i18n="dayTitle">Versorgung nach Quelle</h2>
+        <div class="segmented" id="rangeButtons">
+          <button type="button" data-range="day">24 h</button>
+          <button type="button" data-range="week" data-i18n="range7">7 Tage</button>
+        </div>
+      </div>
       <div class="plotwrap">
         <div class="scroller"><svg class="chart" id="dayChart" role="img"></svg></div>
         <div class="tip" id="dayTip"></div>
       </div>
       <div class="legend" id="dayLegend" style="margin-top:16px"></div>
       <p class="note" data-i18n="dayNote"></p>
+    </section>
+
+    <section id="compareSection">
+      <h2 data-i18n="compareTitle">Heute im Vergleich</h2>
+      <div class="comparegrid" id="compareGrid"></div>
+      <p class="note" data-i18n="compareNote"></p>
+    </section>
+
+    <section id="dependencySection">
+      <h2 data-i18n="dependencyTitle">Importabhängigkeit · 7 Tage</h2>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="dependencyChart" role="img"></svg></div>
+        <div class="tip" id="dependencyTip"></div>
+      </div>
+      <p class="note" data-i18n="dependencyNote"></p>
+    </section>
+
+    <section id="forecastSection" hidden>
+      <h2 data-i18n="forecastTitle">Ausblick · nächste 24 Stunden</h2>
+      <div class="forecastgrid">
+        <div>
+          <h3 class="subhead" data-i18n="solarForecast">Photovoltaik-Prognose</h3>
+          <div class="forecaststat" id="solarForecastStat"></div>
+          <svg class="chart" id="solarForecastChart" role="img"></svg>
+        </div>
+        <div>
+          <h3 class="subhead" data-i18n="priceForecast">Day-Ahead-Preis</h3>
+          <div class="forecaststat" id="priceForecastStat"></div>
+          <svg class="chart" id="priceForecastChart" role="img"></svg>
+        </div>
+      </div>
+      <p class="note" data-i18n="forecastNote"></p>
     </section>
 
 
@@ -123,6 +163,6 @@
   <div id="error" class="err" hidden></div>
 
 </div>
-<script src="app.js?v=3d8ca1621f"></script>
+<script src="app.js?v=779c3eadca"></script>
 </body>
 </html>

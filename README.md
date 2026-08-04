@@ -1,8 +1,8 @@
 # Woher kommt der Strom?
 
 A small, dependency-free page showing where Austria's electricity is coming
-from: the generation mix, the last 24 hours by source, and the flows across
-the borders.
+from: the current mix, seven-day history and comparisons, import dependency,
+cross-border flows, and the next day's solar and price outlook.
 
 **→ [rfuzzo.github.io/woher-kommt-der-strom](https://rfuzzo.github.io/woher-kommt-der-strom/)**
 
@@ -33,9 +33,10 @@ Everything comes from the [Energy-Charts v2 API](https://api.energy-charts.info/
 
 | Panel | Endpoint |
 |---|---|
-| Generation mix, 24 h shape, load, renewable share | `/v2/public_power?country=at` |
+| Generation mix, 24 h / 7 d shape, comparisons, load, renewable share | `/v2/public_power?country=at` |
 | Cross-border flows, import/export balance | `/v2/cbpf?country=at` |
 | Day-ahead price, trade valuation | `/v2/price?bzn=AT` |
+| Solar forecast | `/v2/public_power_forecast?country=at` |
 | Import composition | `/v2/public_power?country={cz,de,hu,it,si,ch}` |
 
 The API rate-limits (HTTP 429) when the neighbour countries are requested
@@ -130,6 +131,9 @@ but are not identical.
   Reordering the groups changes which colours sit next to each other and voids
   that result. Three light-mode series fall below 3:1 contrast, which is why
   every value is directly labelled and each chart has a table view.
+- **Forecasts stay visually separate.** Solar and price use two charts rather
+  than a dual axis, which would make their apparent relationship depend on an
+  arbitrary choice of scales.
 
 ## Running locally
 

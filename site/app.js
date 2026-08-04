@@ -30,7 +30,22 @@ const I18N = {
     title: 'Woher kommt der Strom?',
     sub: 'Österreichs Erzeugungsmix, Tagesverlauf und Grenzflüsse — aus offenen Daten.',
     mixTitle: 'Woher der Strom gerade kommt',
-    dayTitle: 'Erzeugung nach Quelle · 24 Stunden',
+    dayTitle: 'Versorgung nach Quelle',
+    cleanScoreTitle: 'Saubere Versorgung · 24 Stunden',
+    compareTitle: 'Heute im Vergleich',
+    compareNote: 'Verglichen wird das gleitende letzte 24-Stunden-Fenster mit dem Mittel der sechs davorliegenden 24-Stunden-Fenster.',
+    dependencyTitle: 'Importabhängigkeit · 7 Tage',
+    dependencyNote: 'Positive Nettoimporte als Anteil der Last. Bei Nettoexport liegt die Importabhängigkeit bei null.',
+    avgLoad: 'Mittlere Last',
+    renewableDomestic: 'Erneuerbar · Inland',
+    importDependency: 'Importanteil',
+    vsAverage: 'gegenüber dem 6-Tage-Mittel',
+    forecastTitle: 'Ausblick · nächste 24 Stunden',
+    solarForecast: 'Photovoltaik-Prognose',
+    priceForecast: 'Day-Ahead-Preis',
+    forecastPeak: 'Höchstwert',
+    forecastLow: 'Tiefstpreis',
+    forecastNote: 'Prognosewerte sind keine Messwerte. Die Photovoltaik-Prognose und der Day-Ahead-Preis werden getrennt gezeigt; gleiche Zeitpunkte bedeuten nicht automatisch einen kausalen Zusammenhang.',
     flowTitle: 'Grenzüberschreitende Flüsse · jetzt',
     tradeTitle: 'Import und Export · 24 Stunden',
     perCountry: 'Je Nachbarland',
@@ -70,6 +85,7 @@ const I18N = {
     ofMean: 'des Mittelwassers',
     riverLive: 'Direkt von eHYD geladen',
     days7: '7 Tage',
+    range7: '7 Tage',
     tableToggle: 'Werte als Tabelle',
     importing: 'Import nach Österreich',
     exporting: 'Export aus Österreich',
@@ -100,7 +116,22 @@ const I18N = {
     title: 'Where does the power come from?',
     sub: "Austria's generation mix, daily shape and cross-border flows — from open data.",
     mixTitle: 'Where the power is coming from right now',
-    dayTitle: 'Generation by source · 24 hours',
+    dayTitle: 'Supply by source',
+    cleanScoreTitle: 'Clean supply · 24 hours',
+    compareTitle: 'Today in context',
+    compareNote: 'The rolling latest 24-hour window is compared with the average of the six preceding 24-hour windows.',
+    dependencyTitle: 'Import dependency · 7 days',
+    dependencyNote: 'Positive net imports as a share of demand. During net export, import dependency is zero.',
+    avgLoad: 'Average load',
+    renewableDomestic: 'Renewable · domestic',
+    importDependency: 'Import share',
+    vsAverage: 'versus the 6-day average',
+    forecastTitle: 'Outlook · next 24 hours',
+    solarForecast: 'Solar forecast',
+    priceForecast: 'Day-ahead price',
+    forecastPeak: 'Peak',
+    forecastLow: 'Lowest price',
+    forecastNote: 'Forecast values are not measurements. Solar output and day-ahead price are shown separately; matching times do not by themselves prove causation.',
     flowTitle: 'Cross-border flows · right now',
     tradeTitle: 'Import and export · 24 hours',
     perCountry: 'By neighbour',
@@ -140,6 +171,7 @@ const I18N = {
     ofMean: 'of mean water',
     riverLive: 'Loaded directly from eHYD',
     days7: '7 days',
+    range7: '7 days',
     tableToggle: 'View values as a table',
     importing: 'Importing into Austria',
     exporting: 'Exporting from Austria',
@@ -170,6 +202,7 @@ const I18N = {
 
 let LANG = (localStorage.getItem('lang') || (navigator.language || '').slice(0, 2)) === 'en' ? 'en' : 'de';
 let DATA = null;
+let DAY_RANGE = 'day';
 const t = k => I18N[LANG][k];
 const label = g => LANG === 'de' ? g.de : g.en;
 
@@ -310,14 +343,36 @@ function renderMix() {
      <tbody>${rows}<tr><td><strong>${t('total')}</strong></td><td class="n"><strong>${nf(supplyMw)}</strong></td><td class="n">100</td></tr></tbody></table>`;
 }
 
+function renderCleanScore() {
+  const box = document.getElementById('cleanScore');
+  box.textContent = '';
+  const im = DATA.importMix;
+  if (!im) return;
+  const stats = [
+    { k: t('renDomestic'), v: im.renewableShareDomestic },
+    { k: t('renSupply'), v: im.renewableShareSupply },
+    { k: t('fossilNuclear'), v: im.fossilNuclearPct, d: t('ofImports') },
+  ];
+  for (const s of stats) {
+    if (s.v == null) continue;
+    const card = el('div', 'tstat');
+    card.append(el('div', 'k', s.k), el('div', 'v', `${nf(s.v, 1)}<small>%</small>`));
+    if (s.d) card.append(el('div', 'd', s.d));
+    box.append(card);
+  }
+}
+
 /* ── 24 h stacked area + load line ────────────────────────────────────── */
 
 const PAD = { t: 14, r: 14, b: 26, l: 46 };
 
 function renderDay() {
   const svg = document.getElementById('dayChart');
-  const groups = orderedGroups();
-  const times = DATA.day.t;
+  const source = DAY_RANGE === 'week' && DATA.history ? DATA.history : DATA.day;
+  const groups = DAY_RANGE === 'week' && DATA.history
+    ? ORDER.map(k => DATA.history.groups.find(g => g.key === k)).filter(Boolean)
+    : orderedGroups();
+  const times = source.t;
   const N = times.length;
   if (!N) return;
 
@@ -332,13 +387,13 @@ function renderDay() {
   // Net imports ride on top of the domestic stack, so the bands add up to
   // total supply. Only the positive side: when Austria is exporting there is
   // nothing coming in, and the load line already sits below the stack there.
-  const imports = DATA.day.netImport.map(v => Math.max(v, 0));
+  const imports = source.netImport.map(v => Math.max(v, 0));
   const bands = [...groups.map(g => ({
     key: g.key, name: label(g), series: g.series,
   })), { key: 'import', name: t('importing2'), series: imports }];
 
   const totals = times.map((_, i) => bands.reduce((a, b) => a + b.series[i], 0));
-  const peak = Math.max(...totals, ...DATA.day.load);
+  const peak = Math.max(...totals, ...source.load);
   const STEP = 2000;
   // Round to a whole number of ticks so the top gridline is always a tick and
   // reliably carries the unit label.
@@ -372,11 +427,14 @@ function renderDay() {
   // load line
   svg.append(svgEl('path', {
     class: 'loadline',
-    d: DATA.day.load.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('')
+    d: source.load.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('')
   }));
 
   // hour ticks
-  const fmt = clockFmt();
+  const fmt = DAY_RANGE === 'week'
+    ? new Intl.DateTimeFormat(LANG === 'de' ? 'de-AT' : 'en-GB',
+      { weekday: 'short', day: 'numeric', timeZone: DATA.timezone || 'Europe/Vienna' })
+    : clockFmt();
   const every = Math.max(1, Math.round(N / 8));
   times.forEach((ts, i) => {
     if (i % every && i !== N - 1) return;
@@ -424,7 +482,7 @@ function renderDay() {
     const rows = [...bands].reverse().filter(b => b.series[i] > 0.05).map(b =>
       `<div class="r"><span class="sw" style="background:var(--${b.key})"></span>${b.name}<span class="v">${nf(b.series[i])} MW<em>${nf(b.series[i] / tot * 100, 1)} %</em></span></div>`).join('');
     tip.innerHTML = `<div class="t">${dateFmt().format(new Date(times[i] * 1000))}</div>${rows}
-      <div class="r tot"><span class="sw" style="background:var(--ink)"></span>${t('load')}<span class="v">${nf(DATA.day.load[i])} MW</span></div>`;
+      <div class="r tot"><span class="sw" style="background:var(--ink)"></span>${t('load')}<span class="v">${nf(source.load[i])} MW</span></div>`;
     tip.classList.add('on');
 
     const wb = wrap.getBoundingClientRect();
@@ -437,6 +495,107 @@ function renderDay() {
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerleave', hide);
   svg.addEventListener('pointerdown', show);
+}
+
+function renderRangeButtons() {
+  for (const button of document.querySelectorAll('#rangeButtons button')) {
+    button.classList.toggle('active', button.dataset.range === DAY_RANGE);
+  }
+}
+
+function renderComparison() {
+  const c = DATA.comparison;
+  const section = document.getElementById('compareSection');
+  if (!c) { section.hidden = true; return; }
+  section.hidden = false;
+  const metrics = [
+    { key: 'avgLoad', label: t('avgLoad'), unit: 'MW', digits: 0 },
+    { key: 'renewablePct', label: t('renewableDomestic'), unit: '%', digits: 1 },
+    { key: 'importShare', label: t('importDependency'), unit: '%', digits: 1 },
+  ];
+  const box = document.getElementById('compareGrid');
+  box.textContent = '';
+  for (const m of metrics) {
+    const now = c.current[m.key], base = c.baseline[m.key];
+    const delta = now - base;
+    const card = el('div', 'comparecard');
+    card.append(el('div', 'k', m.label),
+      el('div', 'v', `${nf(now, m.digits)}<small>${m.unit}</small>`),
+      el('div', `delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`,
+        `${delta > 0 ? '↑' : delta < 0 ? '↓' : '→'} ${nf(Math.abs(delta), m.digits)} ${m.unit}`),
+      el('div', 'base', `${nf(base, m.digits)} ${m.unit} · ${t('vsAverage')}`));
+    box.append(card);
+  }
+}
+
+function renderDependency() {
+  const h = DATA.history;
+  const section = document.getElementById('dependencySection');
+  if (!h || h.t.length < 2) { section.hidden = true; return; }
+  section.hidden = false;
+  const values = h.importShare;
+  const svg = document.getElementById('dependencyChart');
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320), H = 220;
+  const P = { t: 20, r: 14, b: 26, l: 42 };
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const top = Math.max(10, Math.ceil(Math.max(...values) / 10) * 10);
+  const x = i => P.l + i / (values.length - 1) * iw;
+  const y = v => P.t + ih - v / top * ih;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.textContent = '';
+  for (let v = 0; v <= top; v += 10) {
+    svg.append(svgEl('line', { class: v ? 'gridline' : 'axisline', x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }));
+    const lab = svgEl('text', { x: P.l - 7, y: y(v) + 4, 'text-anchor': 'end' });
+    lab.textContent = `${v}${v === top ? ' %' : ''}`; svg.append(lab);
+  }
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  svg.append(svgEl('path', { d: `${line}L${x(values.length - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--import)', 'fill-opacity': .14 }));
+  svg.append(svgEl('path', { d: line, fill: 'none', stroke: 'var(--import)', 'stroke-width': 2 }));
+  const dayFmt = new Intl.DateTimeFormat(LANG === 'de' ? 'de-AT' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: DATA.timezone });
+  const every = Math.max(1, Math.round(values.length / 7));
+  h.t.forEach((ts, i) => { if (i % every && i !== values.length - 1) return; const lab = svgEl('text', { x: x(i), y: H - 8, 'text-anchor': i === values.length - 1 ? 'end' : 'middle' }); lab.textContent = dayFmt.format(new Date(ts * 1000)); svg.append(lab); });
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 }); svg.append(cursor);
+  const tip = document.getElementById('dependencyTip'), wrap = svg.closest('.plotwrap');
+  const show = ev => { const b = svg.getBoundingClientRect(); let i = Math.round((((ev.clientX - b.left) / b.width * W) - P.l) / iw * (values.length - 1)); i = Math.max(0, Math.min(values.length - 1, i)); cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('opacity', 1); tip.innerHTML = `<div class="t">${dateFmt().format(new Date(h.t[i] * 1000))}</div><div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('importDependency')}<span class="v">${nf(values[i], 1)} %</span></div>`; tip.classList.add('on'); const wb = wrap.getBoundingClientRect(); tip.style.left = Math.min(Math.max(x(i) / W * b.width + b.left - wb.left + 12, 0), wb.width - tip.offsetWidth) + 'px'; tip.style.top = '5px'; };
+  svg.addEventListener('pointermove', show); svg.addEventListener('pointerdown', show); svg.addEventListener('pointerleave', () => { tip.classList.remove('on'); cursor.setAttribute('opacity', 0); });
+}
+
+function drawForecastLine(svg, times, values, color, unit) {
+  if (!times.length || times.length !== values.length) return;
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 420, 300), H = 170;
+  const P = { t: 12, r: 12, b: 24, l: 42 };
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const rawLo = Math.min(0, ...values), rawHi = Math.max(1, ...values);
+  const step = niceStep(rawHi - rawLo || 1, 4);
+  const lo = Math.floor(rawLo / step) * step, hi = Math.ceil(rawHi / step) * step;
+  const x = i => P.l + i / Math.max(1, values.length - 1) * iw;
+  const y = v => P.t + ih - (v - lo) / Math.max(step, hi - lo) * ih;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.textContent = '';
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    svg.append(svgEl('line', { class: Math.abs(v) < step / 1000 ? 'axisline' : 'gridline', x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }));
+    const lab = svgEl('text', { x: P.l - 7, y: y(v) + 4, 'text-anchor': 'end' }); lab.textContent = nf(v); svg.append(lab);
+  }
+  const u = svgEl('text', { x: P.l - 7, y: P.t - 2, 'text-anchor': 'end' }); u.textContent = unit; svg.append(u);
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  svg.append(svgEl('path', { d: `${line}L${x(values.length - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: color, 'fill-opacity': .13 }));
+  svg.append(svgEl('path', { d: line, fill: 'none', stroke: color, 'stroke-width': 2 }));
+  const fmt = clockFmt(), every = Math.max(1, Math.round(values.length / 4));
+  times.forEach((ts, i) => { if (i % every && i !== values.length - 1) return; const lab = svgEl('text', { x: x(i), y: H - 7, 'text-anchor': i === values.length - 1 ? 'end' : i === 0 ? 'start' : 'middle' }); lab.textContent = fmt.format(new Date(ts * 1000)); svg.append(lab); });
+}
+
+function renderForecast() {
+  const f = DATA.forecast, section = document.getElementById('forecastSection');
+  if (!f || (!f.solar.t.length && !f.price.t.length)) { section.hidden = true; return; }
+  section.hidden = false;
+  if (f.solar.t.length) {
+    const peak = Math.max(...f.solar.mw), i = f.solar.mw.indexOf(peak);
+    document.getElementById('solarForecastStat').textContent = `${t('forecastPeak')}: ${nf(peak)} MW · ${dateFmt().format(new Date(f.solar.t[i] * 1000))}`;
+    drawForecastLine(document.getElementById('solarForecastChart'), f.solar.t, f.solar.mw, 'var(--solar)', 'MW');
+  }
+  if (f.price.t.length) {
+    const low = Math.min(...f.price.eur), i = f.price.eur.indexOf(low);
+    document.getElementById('priceForecastStat').textContent = `${t('forecastLow')}: ${nf(low, 1)} €/MWh · ${dateFmt().format(new Date(f.price.t[i] * 1000))}`;
+    drawForecastLine(document.getElementById('priceForecastChart'), f.price.t, f.price.eur, 'var(--hydro)', '€/MWh');
+  }
 }
 
 /* ── what the imports are made of ─────────────────────────────────────── */
@@ -1100,7 +1259,12 @@ function renderAll() {
   renderStamp();
   renderTiles();
   renderMix();
+  renderCleanScore();
+  renderRangeButtons();
   renderDay();
+  renderComparison();
+  renderDependency();
+  renderForecast();
   renderTrade();
   renderImportMix();
   renderMoney();
@@ -1122,9 +1286,19 @@ document.getElementById('theme').addEventListener('click', () => {
   document.documentElement.dataset.theme = dark ? 'light' : 'dark';
   localStorage.setItem('theme', document.documentElement.dataset.theme);
   renderDay();
+  renderDependency();
+  renderForecast();
   renderTrade();
   renderImportMix();
   renderMoney();
+});
+
+document.getElementById('rangeButtons').addEventListener('click', event => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  DAY_RANGE = button.dataset.range;
+  renderRangeButtons();
+  renderDay();
 });
 
 if (localStorage.getItem('theme')) {
@@ -1134,7 +1308,7 @@ if (localStorage.getItem('theme')) {
 let resizeTimer;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (DATA) { renderDay(); renderTrade(); } }, 150);
+  resizeTimer = setTimeout(() => { if (DATA) { renderDay(); renderDependency(); renderForecast(); renderTrade(); } }, 150);
 });
 
 fetch('data.json?' + Date.now())
