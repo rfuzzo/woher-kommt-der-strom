@@ -41,10 +41,32 @@ Bundesnetzagentur | SMARD.de. Both attributions render in the page footer.
 
 ### This is not real-time
 
-Energy-Charts publishes settled data roughly **1–3 hours behind** the wall
-clock. The page shows the timestamp of the data and how late it was published,
-rather than implying it is live. `available_until` from the API decides which
-sample is the newest usable one.
+Measured lag between `available_until` and the wall clock, sampled once:
+
+| Endpoint | Resolution | Lag |
+|---|---|---|
+| `frequency` | 1 s | **~2 min** |
+| `public_power` | 15 min | ~2 h |
+| `cbpf` | 15 min | ~3 h |
+| `price` (day-ahead) | 15 min | **~28 h ahead** |
+| `public_power_forecast` | 15 min | ~28 h ahead |
+
+The lag is in the source, not in this repo: APG publishes metered generation
+about an hour behind, and ENTSO-E aggregation adds more. Refreshing faster
+than every 30 minutes would buy nothing. The page therefore shows the data
+timestamp and the publication lag instead of implying it is live, and
+`available_until` decides which sample is the newest usable one.
+
+Two things could make the page feel closer to now, neither shipped yet:
+
+- **Grid frequency** is effectively live at 1 s resolution (Austria is in the
+  RG Continental Europe synchronous area, so it is the same frequency as
+  Germany). It cannot be fetched from the browser — the API sends
+  `access-control-allow-origin: https://www.api.energy-charts.info`, so a
+  direct client-side call is blocked and it would need either the Actions
+  rebuild (which reintroduces cron lag) or a small proxy.
+- **Solar forecast** for Austria runs ~28 h ahead, which would cover the
+  trailing gap between the last measured sample and now.
 
 ### Two gotchas worth knowing
 
