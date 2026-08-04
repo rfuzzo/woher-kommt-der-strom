@@ -614,22 +614,6 @@ function renderImportMix() {
 
   const groups = IMP_ORDER.map(k => im.groups.find(g => g.key === k)).filter(Boolean);
 
-  const stats = [
-    { k: t('fossilNuclear'), v: nf(im.fossilNuclearPct, 1), u: '%', d: t('ofImports') },
-  ];
-  if (im.renewableShareDomestic != null && im.renewableShareSupply != null) {
-    stats.push({ k: t('renDomestic'), v: nf(im.renewableShareDomestic, 1), u: '%' });
-    stats.push({ k: t('renSupply'), v: nf(im.renewableShareSupply, 1), u: '%', d: t('ofSupply') });
-  }
-  const sbox = document.getElementById('impMixStats');
-  sbox.textContent = '';
-  for (const s of stats) {
-    const c = el('div', 'tstat');
-    c.append(el('div', 'k', s.k), el('div', 'v', `${s.v}<small>${s.u}</small>`));
-    if (s.d) c.append(el('div', 'd', s.d));
-    sbox.append(c);
-  }
-
   const bar = document.getElementById('impMixBar');
   const leg = document.getElementById('impMixLegend');
   bar.textContent = '';
