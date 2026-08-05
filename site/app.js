@@ -105,6 +105,7 @@ const I18N = {
     riverLive: 'Direkt von eHYD geladen',
     days7: '7 Tage',
     days: 'Tage',
+    noData: 'keine Daten veröffentlicht',
     range7: '7 Tage',
     tableToggle: 'Werte als Tabelle',
     importing: 'Import nach Österreich',
@@ -213,6 +214,7 @@ const I18N = {
     riverLive: 'Loaded directly from eHYD',
     days7: '7 days',
     days: 'days',
+    noData: 'not published',
     range7: '7 days',
     tableToggle: 'View values as a table',
     importing: 'Importing into Austria',
@@ -293,6 +295,57 @@ const svgTitle = (node, text) => {
   node.append(title);
   return node;
 };
+
+/* ── series with gaps ─────────────────────────────────────────────────── */
+
+/* Cross-border series carry nulls where the source has not published an
+   interval. Splitting into runs of consecutive published points lets every
+   chart draw a gap there: joining across it would invent a value, and the
+   zero-fill it replaces invented an event — a 15-minute cliff and recovery
+   that never happened. */
+function segments(values) {
+  const runs = [];
+  let run = null;
+  values.forEach((v, i) => {
+    if (v == null) { run = null; return; }
+    if (!run) { run = { from: i, values: [] }; runs.push(run); }
+    run.values.push(v);
+  });
+  return runs;
+}
+
+const finite = values => values.filter(v => v != null);
+
+/* Indices for time-axis labels. The count follows the available width rather
+   than a fixed number: at phone widths eight "HH:MM" labels do not fit, and
+   the forced final label lands on top of its neighbour. */
+function tickIndices(n, innerWidth, maxTicks = 8) {
+  const fit = Math.max(2, Math.min(maxTicks, Math.floor(innerWidth / 62)));
+  const every = Math.max(1, Math.round(n / fit));
+  const idx = [];
+  for (let i = 0; i < n; i += every) idx.push(i);
+  const last = n - 1;
+  if (idx[idx.length - 1] !== last) {
+    // The last sample is always labelled, so drop the regular tick before it
+    // when the two would collide.
+    if (last - idx[idx.length - 1] < every * 0.55) idx.pop();
+    idx.push(last);
+  }
+  return idx;
+}
+
+/* Time labels along the bottom of a chart, using the shared tick rule. */
+function timeAxis(svg, times, x, H, W, iw, fmt, maxTicks = 8) {
+  const n = times.length;
+  for (const i of tickIndices(n, iw, maxTicks)) {
+    const lab = svgEl('text', {
+      x: x(i), y: H - 8,
+      'text-anchor': i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle',
+    });
+    lab.textContent = fmt.format(new Date(times[i] * 1000));
+    svg.append(lab);
+  }
+}
 
 /* ── header ───────────────────────────────────────────────────────────── */
 
@@ -604,13 +657,7 @@ function renderDay() {
     ? new Intl.DateTimeFormat(LANG === 'de' ? 'de-AT' : 'en-GB',
       { weekday: 'short', day: 'numeric', timeZone: DATA.timezone || 'Europe/Vienna' })
     : clockFmt();
-  const every = Math.max(1, Math.round(N / 8));
-  times.forEach((ts, i) => {
-    if (i % every && i !== N - 1) return;
-    const lab = svgEl('text', { x: x(i), y: H - 8, 'text-anchor': i === N - 1 ? 'end' : 'middle' });
-    lab.textContent = fmt.format(new Date(ts * 1000));
-    svg.append(lab);
-  });
+  timeAxis(svg, times, x, H, W, iw, fmt);
 
   const cursor = svgEl('line', { class: 'cursor', y1: PAD.t, y2: PAD.t + ih, opacity: 0 });
   svg.append(cursor);
@@ -722,8 +769,7 @@ function renderDependency() {
   svg.append(svgEl('path', { d: `${line}L${x(values.length - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--import)', 'fill-opacity': .14 }));
   svg.append(svgEl('path', { d: line, fill: 'none', stroke: 'var(--import)', 'stroke-width': 2 }));
   const dayFmt = new Intl.DateTimeFormat(LANG === 'de' ? 'de-AT' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: DATA.timezone });
-  const every = Math.max(1, Math.round(values.length / 7));
-  h.t.forEach((ts, i) => { if (i % every && i !== values.length - 1) return; const lab = svgEl('text', { x: x(i), y: H - 8, 'text-anchor': i === values.length - 1 ? 'end' : 'middle' }); lab.textContent = dayFmt.format(new Date(ts * 1000)); svg.append(lab); });
+  timeAxis(svg, h.t, x, H, W, iw, dayFmt, 7);
   const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 }); svg.append(cursor);
   const tip = document.getElementById('dependencyTip'), wrap = svg.closest('.plotwrap');
   const show = ev => { const b = svg.getBoundingClientRect(); let i = Math.round((((ev.clientX - b.left) / b.width * W) - P.l) / iw * (values.length - 1)); i = Math.max(0, Math.min(values.length - 1, i)); cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('opacity', 1); tip.innerHTML = `<div class="t">${dateFmt().format(new Date(h.t[i] * 1000))}</div><div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('importDependency')}<span class="v">${nf(values[i], 1)} %</span></div>`; tip.classList.add('on'); const wb = wrap.getBoundingClientRect(); tip.style.left = Math.min(Math.max(x(i) / W * b.width + b.left - wb.left + 12, 0), wb.width - tip.offsetWidth) + 'px'; tip.style.top = '5px'; };
@@ -749,8 +795,7 @@ function drawLineChart(svg, times, values, color, unit) {
   const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
   svg.append(svgEl('path', { d: `${line}L${x(values.length - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: color, 'fill-opacity': .13 }));
   svg.append(svgEl('path', { d: line, fill: 'none', stroke: color, 'stroke-width': 2 }));
-  const fmt = clockFmt(), every = Math.max(1, Math.round(values.length / 4));
-  times.forEach((ts, i) => { if (i % every && i !== values.length - 1) return; const lab = svgEl('text', { x: x(i), y: H - 7, 'text-anchor': i === values.length - 1 ? 'end' : i === 0 ? 'start' : 'middle' }); lab.textContent = fmt.format(new Date(ts * 1000)); svg.append(lab); });
+  timeAxis(svg, times, x, H + 1, W, iw, clockFmt(), 4);
 }
 
 /* ── a year of daily renewable share ──────────────────────────────────── */
@@ -909,8 +954,7 @@ function renderBalance() {
   const line = b.series.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
   svg.append(svgEl('path', { d: `${line}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--pumped)', 'fill-opacity': .16 }));
   svg.append(svgEl('path', { d: line, fill: 'none', stroke: 'var(--pumped)', 'stroke-width': 2 }));
-  const fmt = clockFmt(), every = Math.max(1, Math.round(N / 8));
-  b.t.forEach((ts, i) => { if (i % every && i !== N - 1) return; const lab = svgEl('text', { x: x(i), y: H - 7, 'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle' }); lab.textContent = fmt.format(new Date(ts * 1000)); svg.append(lab); });
+  timeAxis(svg, b.t, x, H + 1, W, iw, clockFmt());
   const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 }); svg.append(cursor);
   const tip = document.getElementById('balanceTip'), wrap = svg.closest('.plotwrap');
   const show = ev => { const rect = svg.getBoundingClientRect(); let i = Math.round((((ev.clientX - rect.left) / rect.width * W) - P.l) / iw * (N - 1)); i = Math.max(0, Math.min(N - 1, i)); cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('opacity', 1); const v = b.series[i]; tip.innerHTML = `<div class="t">${dateFmt().format(new Date(b.t[i] * 1000))}</div><div class="r tot"><span class="sw" style="background:var(--pumped)"></span>${t('balanceGap')}<span class="v">${v > 0 ? '+' : ''}${nf(v)} MW</span></div>`; tip.classList.add('on'); const wb = wrap.getBoundingClientRect(); tip.style.left = Math.min(Math.max(x(i) / W * rect.width + rect.left - wb.left + 12, 0), wb.width - tip.offsetWidth) + 'px'; tip.style.top = '5px'; };
@@ -943,8 +987,7 @@ function renderStorage() {
   const pumpLine = s.pumping.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(-v)}`).join('');
   svg.append(svgEl('path', { d: `${genLine}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--export)', 'fill-opacity': .75 }));
   svg.append(svgEl('path', { d: `${pumpLine}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: 'var(--import)', 'fill-opacity': .75 }));
-  const fmt = clockFmt(), every = Math.max(1, Math.round(N / 8));
-  s.t.forEach((ts, i) => { if (i % every && i !== N - 1) return; const lab = svgEl('text', { x: x(i), y: H - 7, 'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle' }); lab.textContent = fmt.format(new Date(ts * 1000)); svg.append(lab); });
+  timeAxis(svg, s.t, x, H + 1, W, iw, clockFmt());
   const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 }); svg.append(cursor);
   const tip = document.getElementById('storageTip'), wrap = svg.closest('.plotwrap');
   const show = ev => { const rect = svg.getBoundingClientRect(); let i = Math.round((((ev.clientX - rect.left) / rect.width * W) - P.l) / iw * (N - 1)); i = Math.max(0, Math.min(N - 1, i)); cursor.setAttribute('x1', x(i)); cursor.setAttribute('x2', x(i)); cursor.setAttribute('opacity', 1); tip.innerHTML = `<div class="t">${dateFmt().format(new Date(s.t[i] * 1000))}</div><div class="r"><span class="sw" style="background:var(--export)"></span>${t('storageGenerating')}<span class="v">${nf(s.generation[i])} MW</span></div><div class="r"><span class="sw" style="background:var(--import)"></span>${t('storagePumping')}<span class="v">${nf(s.pumping[i])} MW</span></div><div class="r tot"><span class="sw" style="background:var(--hydro)"></span>${t('price')}<span class="v">${nf(s.price[i], 1)} €/MWh</span></div>`; tip.classList.add('on'); const wb = wrap.getBoundingClientRect(); tip.style.left = Math.min(Math.max(x(i) / W * rect.width + rect.left - wb.left + 12, 0), wb.width - tip.offsetWidth) + 'px'; tip.style.top = '5px'; };
@@ -1012,9 +1055,16 @@ function drawImportMixChart(groups, im) {
 
   const P = { t: 26, r: PAD.r, b: PAD.b, l: PAD.l };
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
-  const totals = im.t.map((_, i) => groups.reduce((a, g) => a + g.series[i], 0));
-  const step = niceStep(Math.max(...totals, 1), 4);
-  const top = Math.max(Math.ceil(Math.max(...totals) / step) * step, step);
+  // A step counts only when every group has a value for it. A partial step
+  // would understate the stack, which is what made a missing border look like
+  // the imports briefly stopping.
+  const published = im.t.map((_, i) => groups.every(g => g.series[i] != null));
+  const totals = im.t.map((_, i) =>
+    published[i] ? groups.reduce((a, g) => a + g.series[i], 0) : null);
+  const known = finite(totals);
+  if (!known.length) return;
+  const step = niceStep(Math.max(...known, 1), 4);
+  const top = Math.max(Math.ceil(Math.max(...known) / step) * step, step);
 
   const x = i => P.l + (i / (N - 1)) * iw;
   const y = v => P.t + ih - (v / top) * ih;
@@ -1032,30 +1082,25 @@ function drawImportMixChart(groups, im) {
   unit.textContent = 'MW';
   svg.append(unit);
 
+  // One run per stretch of published steps, so a gap is a gap in every band.
+  const runs = segments(totals);
   let base = new Array(N).fill(0);
   for (const g of groups) {
-    const upper = base.map((b, i) => b + g.series[i]);
-    if (upper.every((v, i) => v - base[i] < 0.05)) { base = upper; continue; }
-    const d = upper.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('')
-      + base.map((_, i) => `L${x(N - 1 - i)},${y(base[N - 1 - i])}`).join('') + 'Z';
-    svg.append(svgEl('path', {
-      d, fill: `var(--${g.key})`, stroke: 'var(--surface)',
-      'stroke-width': 2, 'stroke-linejoin': 'round',
-    }));
+    const upper = base.map((b, i) => published[i] ? b + g.series[i] : 0);
+    if (upper.every((v, i) => !published[i] || v - base[i] < 0.05)) { base = upper; continue; }
+    for (const run of runs) {
+      const idx = run.values.map((_, k) => run.from + k);
+      const d = idx.map((i, k) => `${k ? 'L' : 'M'}${x(i)},${y(upper[i])}`).join('')
+        + [...idx].reverse().map(i => `L${x(i)},${y(base[i])}`).join('') + 'Z';
+      svg.append(svgEl('path', {
+        d, fill: `var(--${g.key})`, stroke: 'var(--surface)',
+        'stroke-width': 2, 'stroke-linejoin': 'round',
+      }));
+    }
     base = upper;
   }
 
-  const fmt = clockFmt();
-  const every = Math.max(1, Math.round(N / 8));
-  im.t.forEach((ts, i) => {
-    if (i % every && i !== N - 1) return;
-    const lab = svgEl('text', {
-      x: x(i), y: H - 8,
-      'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle',
-    });
-    lab.textContent = fmt.format(new Date(ts * 1000));
-    svg.append(lab);
-  });
+  timeAxis(svg, im.t, x, H, W, iw, clockFmt());
 
   const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 });
   svg.append(cursor);
@@ -1070,11 +1115,16 @@ function drawImportMixChart(groups, im) {
     cursor.setAttribute('x1', x(i));
     cursor.setAttribute('x2', x(i));
     cursor.setAttribute('opacity', 1);
-    const tot = totals[i] || 1;
-    const rows = [...groups].reverse().filter(g => g.series[i] > 0.05).map(g =>
-      `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW<em>${nf(g.series[i] / tot * 100, 1)} %</em></span></div>`).join('');
-    tip.innerHTML = `<div class="t">${dateFmt().format(new Date(im.t[i] * 1000))}</div>${rows}
-      <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('imported')}<span class="v">${nf(totals[i])} MW</span></div>`;
+    const stamp = `<div class="t">${dateFmt().format(new Date(im.t[i] * 1000))}</div>`;
+    if (totals[i] == null) {
+      tip.innerHTML = `${stamp}<div class="r tot"><span class="sw" style="background:var(--axis)"></span>${t('noData')}</div>`;
+    } else {
+      const tot = totals[i] || 1;
+      const rows = [...groups].reverse().filter(g => g.series[i] > 0.05).map(g =>
+        `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW<em>${nf(g.series[i] / tot * 100, 1)} %</em></span></div>`).join('');
+      tip.innerHTML = `${stamp}${rows}
+        <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('imported')}<span class="v">${nf(totals[i])} MW</span></div>`;
+    }
     tip.classList.add('on');
     const wb = wrap.getBoundingClientRect();
     const rel = x(i) / W * b.width + (b.left - wb.left);
@@ -1359,9 +1409,14 @@ function riverSpark(r) {
    colour without a second scale or a second chart. */
 function divergingArea(svg, vals, x, y, zeroY, idPrefix) {
   const N = vals.length;
+  const runs = segments(vals);
+  if (!runs.length) return;
+
   const defs = svgEl('defs', {});
   const box = { x: x(0), w: x(N - 1) - x(0) };
 
+  // The clips only bound the plot above and below zero, so one pair serves
+  // every run.
   for (const side of ['pos', 'neg']) {
     const cp = svgEl('clipPath', { id: `${idPrefix}-${side}` });
     cp.append(svgEl('rect', {
@@ -1373,13 +1428,15 @@ function divergingArea(svg, vals, x, y, zeroY, idPrefix) {
   }
   svg.append(defs);
 
-  const d = vals.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y.of(v)}`).join('')
-    + `L${x(N - 1)},${zeroY}L${x(0)},${zeroY}Z`;
-
-  for (const [side, color] of [['pos', 'var(--import)'], ['neg', 'var(--export)']]) {
-    svg.append(svgEl('path', {
-      d, fill: color, 'clip-path': `url(#${idPrefix}-${side})`, 'fill-opacity': 0.85,
-    }));
+  for (const run of runs) {
+    const end = run.from + run.values.length - 1;
+    const d = run.values.map((v, k) => `${k ? 'L' : 'M'}${x(run.from + k)},${y.of(v)}`).join('')
+      + `L${x(end)},${zeroY}L${x(run.from)},${zeroY}Z`;
+    for (const [side, color] of [['pos', 'var(--import)'], ['neg', 'var(--export)']]) {
+      svg.append(svgEl('path', {
+        d, fill: color, 'clip-path': `url(#${idPrefix}-${side})`, 'fill-opacity': 0.85,
+      }));
+    }
   }
 }
 
@@ -1432,7 +1489,7 @@ function renderTrade() {
   // caption above the top tick.
   const P = { t: 28, r: PAD.r, b: PAD.b, l: PAD.l };
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
-  const mag = Math.max(...tr.net.map(Math.abs), 500);
+  const mag = Math.max(...finite(tr.net).map(Math.abs), 500);
   const STEP = mag > 2500 ? 1000 : 500;
   const top = Math.ceil(mag / STEP) * STEP;
 
@@ -1459,20 +1516,15 @@ function renderTrade() {
 
   divergingArea(svg, tr.net, x, y, zeroY, 'net');
 
-  svg.append(svgEl('path', {
-    class: 'loadline',
-    d: tr.net.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${yOf(v)}`).join(''),
-    'stroke-width': 1.5,
-  }));
+  for (const run of segments(tr.net)) {
+    svg.append(svgEl('path', {
+      class: 'loadline',
+      d: run.values.map((v, k) => `${k ? 'L' : 'M'}${x(run.from + k)},${yOf(v)}`).join(''),
+      'stroke-width': 1.5,
+    }));
+  }
 
-  const fmt = clockFmt();
-  const every = Math.max(1, Math.round(N / 8));
-  tr.t.forEach((ts, i) => {
-    if (i % every && i !== N - 1) return;
-    const lab = svgEl('text', { x: x(i), y: H - 8, 'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle' });
-    lab.textContent = fmt.format(new Date(ts * 1000));
-    svg.append(lab);
-  });
+  timeAxis(svg, tr.t, x, H, W, iw, clockFmt());
 
   const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 });
   svg.append(cursor);
@@ -1489,14 +1541,20 @@ function renderTrade() {
     cursor.setAttribute('opacity', 1);
 
     const v = tr.net[i];
-    // Percentages here are of gross flow across all borders, so an inflow and
-    // an outflow of equal size each read as half the traffic rather than
-    // cancelling to nothing.
-    const gross = tr.countries.reduce((a, c) => a + Math.abs(c.series[i]), 0) || 1;
-    const rows = tr.countries.map(c =>
-      `<div class="r"><span class="sw" style="background:${c.series[i] >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${country(c.name)}<span class="v">${c.series[i] > 0 ? '+' : ''}${nf(c.series[i])}<em>${nf(Math.abs(c.series[i]) / gross * 100, 0)} %</em></span></div>`).join('');
-    tip.innerHTML = `<div class="t">${dateFmt().format(new Date(tr.t[i] * 1000))}</div>${rows}
-      <div class="r tot"><span class="sw" style="background:${v >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${v >= 0 ? t('importing2') : t('exporting2')}<span class="v">${v > 0 ? '+' : ''}${nf(v)} MW</span></div>`;
+    const stamp = `<div class="t">${dateFmt().format(new Date(tr.t[i] * 1000))}</div>`;
+    if (v == null) {
+      tip.innerHTML = `${stamp}<div class="r tot"><span class="sw" style="background:var(--axis)"></span>${t('noData')}</div>`;
+    } else {
+      // Percentages here are of gross flow across all borders, so an inflow
+      // and an outflow of equal size each read as half the traffic rather
+      // than cancelling to nothing.
+      const gross = tr.countries.reduce((a, c) => a + Math.abs(c.series[i] ?? 0), 0) || 1;
+      const rows = tr.countries.map(c => c.series[i] == null
+        ? `<div class="r"><span class="sw" style="background:var(--axis)"></span>${country(c.name)}<span class="v">${t('noData')}</span></div>`
+        : `<div class="r"><span class="sw" style="background:${c.series[i] >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${country(c.name)}<span class="v">${c.series[i] > 0 ? '+' : ''}${nf(c.series[i])}<em>${nf(Math.abs(c.series[i]) / gross * 100, 0)} %</em></span></div>`).join('');
+      tip.innerHTML = `${stamp}${rows}
+        <div class="r tot"><span class="sw" style="background:${v >= 0 ? 'var(--import)' : 'var(--export)'}"></span>${v >= 0 ? t('importing2') : t('exporting2')}<span class="v">${v > 0 ? '+' : ''}${nf(v)} MW</span></div>`;
+    }
     tip.classList.add('on');
 
     const wb = wrap.getBoundingClientRect();
@@ -1512,8 +1570,10 @@ function renderTrade() {
   renderSparks(tr);
 
   const rows = tr.countries.map(c => {
-    const last = c.series[c.series.length - 1];
-    const hi = Math.max(...c.series), lo = Math.min(...c.series);
+    const known = finite(c.series);
+    if (!known.length) return '';
+    const last = known[known.length - 1];
+    const hi = Math.max(...known), lo = Math.min(...known);
     return `<tr><td>${country(c.name)}</td><td class="n">${last > 0 ? '+' : ''}${nf(last)}</td><td class="n">${nf(hi)}</td><td class="n">${nf(lo)}</td></tr>`;
   }).join('');
   document.getElementById('tradeTable').innerHTML =
@@ -1531,18 +1591,23 @@ function renderSparks(tr) {
   box.textContent = '';
   // One shared scale across the small multiples, so the panels are
   // comparable to each other rather than each self-normalised.
-  const mag = Math.max(...tr.countries.flatMap(c => c.series.map(Math.abs)), 500);
+  const mag = Math.max(...tr.countries.flatMap(c => finite(c.series).map(Math.abs)), 500);
   const now = new Map((DATA.flows || []).map(f => [f.name, f.mw]));
-  const countries = [...tr.countries].sort((a, b) =>
-    Math.abs(now.get(b.name) ?? b.series[b.series.length - 1]) -
-    Math.abs(now.get(a.name) ?? a.series[a.series.length - 1]));
+  const latest = c => {
+    if (now.has(c.name)) return now.get(c.name);
+    const known = finite(c.series);
+    return known.length ? known[known.length - 1] : null;
+  };
+  const countries = [...tr.countries]
+    .sort((a, b) => Math.abs(latest(b) ?? 0) - Math.abs(latest(a) ?? 0));
 
   for (const c of countries) {
     const card = el('div', 'spark');
-    const last = now.get(c.name) ?? c.series[c.series.length - 1];
+    const last = latest(c);
     const head = el('div', 'sh');
-    const val = el('span', 'val', `${last > 0 ? '+' : ''}${nf(last)} MW`);
-    if (Math.abs(last) >= 20) val.classList.add(last > 0 ? 'imp' : 'exp');
+    const val = el('span', 'val',
+      last == null ? t('noData') : `${last > 0 ? '+' : ''}${nf(last)} MW`);
+    if (last != null && Math.abs(last) >= 20) val.classList.add(last > 0 ? 'imp' : 'exp');
     head.append(el('span', 'nm', country(c.name)), val);
     card.append(head);
 

@@ -162,6 +162,21 @@ def clean(vals: list | None, n: int, scale: float = 1.0) -> list[float]:
             for i in range(n)]
 
 
+def scaled(vals: list | None, n: int, scale: float = 1.0) -> list[float | None]:
+    """Like clean(), but a missing value stays missing.
+
+    Zero-filling is right for generation: a production type the API does not
+    report really is contributing nothing. It is wrong for cross-border flows,
+    where an unpublished interval would be drawn as a border that briefly
+    carried no power — a 15-minute cliff and recovery that never happened. The
+    page would rather show a gap than invent an event.
+    """
+    vals = vals or []
+    return [float(vals[i]) * scale
+            if i < len(vals) and vals[i] is not None else None
+            for i in range(n)]
+
+
 def r1(x: float) -> float:
     return round(x, 1)
 
@@ -216,6 +231,17 @@ def add_import_mix(out: dict, win: list, times: list,
     stamps, totals, covered = [], [], []
 
     for ts, per_border in flows:
+        # One unpublished border makes the gross total unknown, not smaller.
+        # Summing what is left would draw every group dropping together for a
+        # single interval — the whole import mix appearing to vanish and come
+        # back. Emit a gap instead.
+        if any(mw is None for mw in per_border.values()):
+            stamps.append(ts)
+            totals.append(None)
+            for k in keys:
+                stack[k].append(None)
+            continue
+
         att = {k: 0.0 for k in keys}
         imported = 0.0
         matched = 0.0
@@ -245,17 +271,21 @@ def add_import_mix(out: dict, win: list, times: list,
     if not stamps:
         return
 
-    last = len(stamps) - 1
+    # The headline figures describe the newest interval that has one, which
+    # is not necessarily the newest interval.
+    last = max((i for i, v in enumerate(totals) if v is not None), default=None)
+    if last is None:
+        return
     now_total = sum(stack[k][last] for k in keys)
     groups = [{
         "key": key, "de": de, "en": en,
         "mw": r1(stack[key][last]),
         "pct": r1(100 * stack[key][last] / now_total) if now_total else 0.0,
-        "series": [r1(v) for v in stack[key]],
+        "series": [r1(v) if v is not None else None for v in stack[key]],
     } for key, de, en, _ in IMPORT_GROUPS]
 
     # Totals over the window, for the headline shares.
-    span = {k: sum(stack[k]) for k in keys}
+    span = {k: sum(v for v in stack[k] if v is not None) for k in keys}
     span_total = sum(span.values()) or 1
     dirty = (span["fossil"] + span["nuclear"]) / span_total * 100
 
@@ -266,7 +296,7 @@ def add_import_mix(out: dict, win: list, times: list,
     for i in win:
         ts = times[i]
         j = by_ts.get(ts)
-        if j is None:
+        if j is None or totals[j] is None:
             continue
         dom_ren += sum(group_series[k][i] for k in ("hydro", "wind", "solar", "biomass"))
         dom_all += sum(group_series[k][i] for k, _, _, _ in GROUPS)
@@ -280,8 +310,10 @@ def add_import_mix(out: dict, win: list, times: list,
         "groups": groups,
         "total": r1(now_total),
         "fossilNuclearPct": r1(dirty),
-        "coverage": r1(min(covered) * 100),
-        "countries": sorted({NEIGHBOURS[s] for _, pb in flows for s, mw in pb.items() if mw > 0}),
+        "coverage": r1(min(covered) * 100) if covered else None,
+        "gaps": sum(1 for v in totals if v is None),
+        "countries": sorted({NEIGHBOURS[s] for _, pb in flows
+                             for s, mw in pb.items() if mw is not None and mw > 0}),
         "renewableShareSupply": r1(100 * (dom_ren + imp_ren) / supply) if supply else None,
         "renewableShareDomestic": r1(100 * dom_ren / dom_all) if dom_all else None,
     }
@@ -622,44 +654,62 @@ def main() -> None:
         flo = max(0, f_now - fspan + 1)
         fwin = list(range(flo, f_now + 1))
 
-        net = clean(fcols.get("sum"), len(ftimes), fscale)
+        # Gaps are kept as nulls from here down: every statistic below skips
+        # them rather than counting them as zero flow.
+        borders = {sid: scaled(vals, len(ftimes), fscale)
+                   for sid, vals in fcols.items() if sid != "sum"}
+        complete = [all(b[i] is not None for b in borders.values())
+                    for i in range(len(ftimes))]
+
+        # The API's own `sum` is added up over the borders it has, so a
+        # missing one does not make it null — it makes it wrong, and low by
+        # exactly the missing flow. That is the whole artefact: a border drops
+        # out for one interval and the balance appears to swing by a gigawatt.
+        # An incomplete interval has an unknown total, so it is a gap here.
+        net = [v if complete[i] else None
+               for i, v in enumerate(scaled(fcols.get("sum"), len(ftimes), fscale))]
         net_win = [net[i] for i in fwin]
+        published = [v for v in net_win if v is not None]
 
         # Load is on the generation clock; match by timestamp so the
         # import-share figures compare like with like.
         load_at = {times[i]: load[i] for i in range(n)}
         shares = [(net[i] / load_at[ftimes[i]] * 100)
                   for i in fwin
-                  if net[i] > 0 and load_at.get(ftimes[i], 0) > 0]
+                  if net[i] is not None and net[i] > 0
+                  and load_at.get(ftimes[i], 0) > 0]
 
-        peak_imp = max(net_win, default=0.0)
-        peak_exp = min(net_win, default=0.0)
-        importing = sum(1 for v in net_win if v > 0)
+        peak_imp = max(published, default=0.0)
+        peak_exp = min(published, default=0.0)
+        importing = sum(1 for v in published if v > 0)
 
         out["trade"] = {
             "at": ftimes[f_now],
             "t": [ftimes[i] for i in fwin],
-            "net": [r1(v) for v in net_win],
+            "net": [r1(v) if v is not None else None for v in net_win],
             "countries": [
                 {"name": names.get(sid, sid),
-                 "series": [r1(v) for v in
-                            (lambda c: [c[i] for i in fwin])(clean(vals, len(ftimes), fscale))]}
-                for sid, vals in fcols.items() if sid != "sum"
+                 "series": [r1(series[i]) if series[i] is not None else None
+                            for i in fwin]}
+                for sid, series in borders.items()
             ],
-            "now": r1(net[f_now]),
+            "now": r1(net[f_now]) if net[f_now] is not None else None,
             "peakImport": r1(peak_imp),
             "peakExport": r1(peak_exp),
             "peakImportShare": r1(max(shares)) if shares else None,
             "importingSteps": importing,
-            "steps": len(fwin),
+            # Denominator for "time as a net importer": intervals the source
+            # actually published, not intervals on the clock.
+            "steps": len(published),
+            "gaps": len(net_win) - len(published),
         }
-        out["trade"]["countries"].sort(key=lambda c: -max(abs(v) for v in c["series"]))
+        out["trade"]["countries"].sort(
+            key=lambda c: -max((abs(v) for v in c["series"] if v is not None), default=0))
 
         # Per-border flows over the window, handed to the import-mix step.
         # Stripped again before the file is written.
         out["_cbpfRaw"] = [
-            (ftimes[i], {sid: clean(vals, len(ftimes), fscale)[i]
-                         for sid, vals in fcols.items() if sid != "sum"})
+            (ftimes[i], {sid: series[i] for sid, series in borders.items()})
             for i in fwin
         ]
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:

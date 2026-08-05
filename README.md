@@ -145,6 +145,20 @@ but are not identical.
 
 - **`cbpf` is in GW, `public_power` is in MW.** The fetcher scales via each
   response's declared `unit` rather than assuming.
+- **`clean()` zero-fills, `scaled()` does not. Pick deliberately.** Zero is
+  right for generation — a production type the API does not report really is
+  contributing nothing. It is wrong for cross-border flows, where it turns an
+  unpublished interval into a border that briefly carried no power.
+- **A missing border does not make `sum` null, it makes it wrong.** The API
+  adds `sum` up over the borders it has, so one unpublished border leaves a
+  number that is low by exactly that flow. Zero-filling the components on top
+  of that produced a ~1.5 GW cliff and recovery in a single interval, which
+  looked like a grid event and was not one. An interval is only used when
+  *every* border has published; otherwise the total is unknown, not smaller,
+  and the charts draw a gap. `trade.gaps` and `importMix.gaps` count them.
+  The give-away that it was never real: all six import-mix groups collapsed
+  together and recovered one step later, while storage and load stayed
+  smooth — no domestic response, no load change, so energy could not balance.
 - **Use `available_until`, not the last row.** The API pads the tail with
   intervals it has not settled yet.
 - **Generation + imports does not equal load.** The balance panel explicitly
@@ -158,6 +172,10 @@ but are not identical.
   Reordering the groups changes which colours sit next to each other and voids
   that result. Three light-mode series fall below 3:1 contrast, which is why
   every value is directly labelled and each chart has a table view.
+- **Time-axis labels are width-aware.** `tickIndices()` picks the label count
+  from the plot width rather than always asking for eight; the last sample is
+  always labelled, so the regular tick before it is dropped when the two would
+  collide. Eight `HH:MM` labels do not fit on a phone.
 - **The seasonal panel leads with the trailing mean.** Daily renewable share
   swings by tens of points with the weather, so the raw series is drawn pale
   behind a 30-day mean. The most recent day may still be partial, which is why
