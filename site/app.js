@@ -48,7 +48,7 @@ const I18N = {
     seasonBest: 'Bester Tag',
     seasonDaily: 'Tageswert',
     seasonTrend: '30-Tage-Mittel',
-    seasonNote: 'Täglicher Erneuerbaren-Anteil an der Last über die letzten 365 Tage, direkt von Energy-Charts. Die helle Fläche sind die Tageswerte, die kräftige Linie das gleitende 30-Tage-Mittel — einzelne Tage schwanken zu stark, um die Jahreszeit zu zeigen. Der jüngste Tag kann noch unvollständig sein. Anders als der Vergleich darüber misst diese Reihe gegen ein ganzes Jahr statt gegen eine Woche Wetter.',
+    seasonNote: 'Täglicher Erneuerbaren-Anteil an der Last über die letzten 365 Tage, direkt von Energy-Charts. Die helle Fläche sind die Tageswerte, die kräftige Linie das gleitende 30-Tage-Mittel — einzelne Tage schwanken zu stark, um die Jahreszeit zu zeigen. Über 100 % ist kein Fehler: Bezugsgröße ist die Last, nicht die Erzeugung. Erzeugen Wasser, Wind und Sonne an einem Tag mehr, als Österreich verbraucht, geht der Überschuss in den Export — im Frühsommer regelmäßig, wenn die Schneeschmelze die Laufwasserkraft auf den Jahreshöchststand bringt und die Last an Wochenenden niedrig ist. Der jüngste Tag kann noch unvollständig sein. Anders als der Vergleich darüber misst diese Reihe gegen ein ganzes Jahr statt gegen eine Woche Wetter.',
     balanceTitle: 'Energiebilanz · 24 Stunden',
     balanceGap: 'Nicht aufgelöste Differenz',
     balanceMean: 'Ø absolute Differenz',
@@ -157,7 +157,7 @@ const I18N = {
     seasonBest: 'Best day',
     seasonDaily: 'Daily value',
     seasonTrend: '30-day mean',
-    seasonNote: 'Daily renewable share of load over the last 365 days, straight from Energy-Charts. The pale area is the daily value, the heavy line a trailing 30-day mean — single days swing too much to show a season. The most recent day may still be incomplete. Unlike the comparison above, this measures against a whole year rather than a week of weather.',
+    seasonNote: 'Daily renewable share of load over the last 365 days, straight from Energy-Charts. The pale area is the daily value, the heavy line a trailing 30-day mean — single days swing too much to show a season. Above 100 % is not an error: the denominator is load, not generation. On a day when water, wind and sun produce more than Austria consumes, the surplus is exported — a regular occurrence in early summer, when snowmelt puts run-of-river hydro at its annual peak and weekend demand is low. The most recent day may still be incomplete. Unlike the comparison above, this measures against a whole year rather than a week of weather.',
     balanceTitle: 'Energy balance · 24 hours',
     balanceGap: 'Unreconciled difference',
     balanceMean: 'Average absolute difference',
@@ -837,7 +837,12 @@ function drawSeason(s) {
   const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320), H = 240;
   const P = { t: 22, r: 14, b: 26, l: 42 };
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
-  const top = Math.min(100, Math.max(20, Math.ceil(Math.max(...s.values) / 20) * 20));
+  // This is a share of *load*, not of generation, so it passes 100 % whenever
+  // renewable output exceeds domestic demand and the surplus is exported.
+  // Austria does that regularly in early summer. The axis has to follow.
+  const peak = Math.max(...s.values, 20);
+  const step = peak <= 160 ? 20 : 50;   // both divide 100, keeping it on a line
+  const top = Math.max(step, Math.ceil(peak / step) * step);
   const x = i => P.l + i / (N - 1) * iw;
   const y = v => P.t + ih - v / top * ih;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -845,10 +850,16 @@ function drawSeason(s) {
   svg.textContent = '';
   svg.setAttribute('aria-label', `${t('seasonTitle')} — ${t('renew')}, ${s.days} ${t('days')}`);
 
-  for (let v = 0; v <= top; v += 20) {
-    svg.append(svgEl('line', { class: v ? 'gridline' : 'axisline', x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }));
+  for (let v = 0; v <= top; v += step) {
+    // 100 % is the line where renewables covered the whole country's demand,
+    // so it is drawn as a threshold rather than as one gridline among many.
+    const threshold = v === 100 && top > 100;
+    svg.append(svgEl('line', {
+      class: v && !threshold ? 'gridline' : 'axisline',
+      x1: P.l, x2: W - P.r, y1: y(v), y2: y(v),
+    }));
     const lab = svgEl('text', { x: P.l - 7, y: y(v) + 4, 'text-anchor': 'end' });
-    lab.textContent = `${v}${v === top ? ' %' : ''}`;
+    lab.textContent = `${v}${v === top || threshold ? ' %' : ''}`;
     svg.append(lab);
   }
 
