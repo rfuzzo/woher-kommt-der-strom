@@ -23,6 +23,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 API = "https://api.energy-charts.info/v2"
+# The daily-average series predates v2 and is served from the root path with a
+# flat {days, data} body. add_season() tries v2 first and falls back to this.
+API_V1 = "https://api.energy-charts.info"
 COUNTRY = "at"
 BZN = "AT"
 OUT = Path(__file__).resolve().parent.parent / "site" / "data.json"
@@ -109,11 +112,11 @@ NOT_GENERATION = {
 }
 
 
-def get(path: str, **params) -> dict:
+def get(path: str, base: str = API, **params) -> dict:
     """GET with backoff. The API rate-limits (429) when several countries are
     requested back to back, which this script does for the import mix."""
     qs = "&".join(f"{k}={v}" for k, v in params.items())
-    req = urllib.request.Request(f"{API}/{path}?{qs}",
+    req = urllib.request.Request(f"{base}/{path}?{qs}",
                                  headers={"Accept": "application/json"})
     last = None
     for attempt in range(5):
@@ -284,6 +287,141 @@ def add_import_mix(out: dict, win: list, times: list,
     }
 
 
+def add_supply_mix(out: dict) -> None:
+    """Precompute the donut: one supply total, split into domestic generation
+    by source and imports by what those imports are made of.
+
+    The import ring carries the import mix's *shares*, applied to the net
+    import figure. The mix itself is measured on gross inflows, which are
+    larger than the net balance, so using its megawatts directly would make
+    the ring overshoot the supply total the rest of the page is built on.
+    """
+    imported = max(out["now"]["netImport"], 0.0)
+    domestic = out["now"]["generation"]
+    supply = domestic + imported
+    if supply <= 0:
+        return
+
+    rings = {
+        "supplyMw": r1(supply),
+        "domesticMw": r1(domestic),
+        "importedMw": r1(imported),
+        "domesticPct": r1(100 * domestic / supply),
+        "importedPct": r1(100 * imported / supply),
+        "domestic": [{"key": g["key"], "de": g["de"], "en": g["en"],
+                      "mw": g["mw"], "pct": r1(100 * g["mw"] / supply)}
+                     for g in out["groups"] if g["mw"] > 0],
+        "imported": [],
+    }
+
+    mix = out.get("importMix")
+    if imported > 0 and mix and mix.get("total", 0) > 0:
+        for g in mix["groups"]:
+            mw = imported * g["mw"] / mix["total"]
+            if mw <= 0:
+                continue
+            rings["imported"].append({
+                "key": g["key"], "de": g["de"], "en": g["en"],
+                "mw": r1(mw), "pct": r1(100 * mw / supply),
+            })
+    elif imported > 0:
+        # Imports are known, their composition is not: one undifferentiated
+        # slice rather than a guess.
+        rings["imported"].append({
+            "key": "import", "de": "Import", "en": "Import",
+            "mw": r1(imported), "pct": r1(100 * imported / supply),
+        })
+
+    out["supplyMix"] = rings
+
+
+def daily_pairs(payload: dict) -> list[tuple[int, float]]:
+    """Read a daily series out of either API generation.
+
+    v2 returns rows of {timestamp, values}; the older root endpoints return
+    parallel `days` (dd.mm.yyyy) and `data` arrays.
+    """
+    if payload.get("data") and isinstance(payload["data"], list) \
+            and payload["data"] and isinstance(payload["data"][0], dict):
+        ids = [s["id"] for s in payload.get("series", [])]
+        pairs = []
+        for row in payload["data"]:
+            values = [row["values"].get(i) for i in ids]
+            value = next((v for v in values if v is not None), None)
+            if value is None:
+                continue
+            ts = int(datetime.fromisoformat(row["timestamp"]).timestamp())
+            pairs.append((ts, float(value)))
+        return pairs
+
+    days = payload.get("days") or []
+    data = payload.get("data") or []
+    pairs = []
+    for day, value in zip(days, data):
+        if value is None:
+            continue
+        try:
+            date = datetime.strptime(day, "%d.%m.%Y").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        pairs.append((int(date.timestamp()), float(value)))
+    return pairs
+
+
+def add_season(out: dict) -> None:
+    """A year of daily renewable share of load, so today has a season to sit
+    in. The rolling seven-day comparison above it cannot show that: a week of
+    weather is not a season."""
+    payload = None
+    for base in (API, API_V1):
+        try:
+            payload = get("ren_share_daily_avg", base=base, country=COUNTRY, year=-1)
+            break
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            print(f"WARNING: ren_share_daily_avg via {base}: {e}", file=sys.stderr)
+    if payload is None:
+        return
+
+    pairs = [p for p in daily_pairs(payload) if p[1] is not None]
+    if len(pairs) < 60:
+        print(f"WARNING: seasonal series too short ({len(pairs)} days)", file=sys.stderr)
+        return
+    pairs.sort()
+    days = [p[0] for p in pairs]
+    values = [p[1] for p in pairs]
+
+    # Daily values are noisy enough to hide the season; the trailing mean is
+    # what carries the shape. Thirty days, so it is a month of weather.
+    window = 30
+    trend_t, trend_v = [], []
+    for i in range(window - 1, len(values)):
+        trend_t.append(days[i])
+        trend_v.append(sum(values[i - window + 1:i + 1]) / window)
+
+    latest = values[-1]
+    earlier = values[:-1]
+    below = sum(1 for v in earlier if v < latest)
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    best = max(range(len(values)), key=lambda i: values[i])
+    worst = min(range(len(values)), key=lambda i: values[i])
+
+    out["season"] = {
+        "t": days,
+        "values": [r1(v) for v in values],
+        "trend": {"t": trend_t, "v": [r1(v) for v in trend_v]},
+        "latest": r1(latest),
+        "latestAt": days[-1],
+        "percentile": r1(100 * below / len(earlier)) if earlier else None,
+        "median": r1(median),
+        "best": {"value": r1(values[best]), "at": days[best]},
+        "worst": {"value": r1(values[worst]), "at": days[worst]},
+        "days": len(values),
+        "license": payload.get("license", ""),
+    }
+
+
 def stamp_assets() -> None:
     """Rewrite app.js / style.css references in index.html to carry a content
     hash.
@@ -450,7 +588,6 @@ def main() -> None:
             "days": len(previous),
         }
 
-    future_prices = []
     try:
         flows = get("cbpf", country=COUNTRY, start=start, end=end)
         fscale = to_mw(flows)
@@ -543,9 +680,6 @@ def main() -> None:
                 "eur": [r1(p[1]) for p in recent],
                 "now": r1(current[1]),
             }
-            future_prices = [(t, v) for t, v in pts
-                             if out["dataAt"] < t <= out["dataAt"] + 24 * 3600]
-
             # What the cross-border balance was worth at day-ahead prices.
             # Commercial trading is used rather than physical flows: money
             # follows trades, not what the wires happen to carry. This is a
@@ -602,31 +736,14 @@ def main() -> None:
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
         print(f"WARNING: day-ahead price unavailable: {e}", file=sys.stderr)
 
-    try:
-        forecast_end = end + timedelta(days=1)
-        forecast = get("public_power_forecast", country=COUNTRY,
-                       start=end - timedelta(days=1), end=forecast_end)
-        fct_times, fct_cols = columns(forecast)
-        fct_scale = to_mw(forecast)
-        solar_future = [(ts, float(v) * fct_scale)
-                        for ts, v in zip(fct_times, fct_cols.get("solar", []))
-                        if v is not None and out["dataAt"] < ts <= out["dataAt"] + 24 * 3600]
-        if solar_future or future_prices:
-            out["forecast"] = {
-                "solar": {
-                    "t": [t for t, _ in solar_future],
-                    "mw": [r1(v) for _, v in solar_future],
-                },
-                "price": {
-                    "t": [t for t, _ in future_prices],
-                    "eur": [r1(v) for _, v in future_prices],
-                },
-            }
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError) as e:
-        print(f"WARNING: forecast unavailable: {e}", file=sys.stderr)
-
     add_import_mix(out, win, times, group_series, load)
     out.pop("_cbpfRaw", None)
+    add_supply_mix(out)
+
+    try:
+        add_season(out)
+    except (KeyError, ValueError, TypeError) as e:
+        print(f"WARNING: seasonal series unavailable: {e}", file=sys.stderr)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, separators=(",", ":")) + "\n", encoding="utf-8")

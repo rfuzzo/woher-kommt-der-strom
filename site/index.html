@@ -6,7 +6,7 @@
 <title>Woher kommt der Strom? — Österreichs Stromnetz</title>
 <meta name="description" content="Woher Österreichs Strom gerade kommt: Erzeugungsmix, Tagesverlauf und Grenzflüsse, aus offenen Daten von Energy-Charts (Fraunhofer ISE).">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="style.css?v=69f3f9bd6d">
+<link rel="stylesheet" href="style.css?v=26d5cd293a">
 </head>
 <body>
 <div class="wrap">
@@ -31,8 +31,18 @@
 
     <section>
       <h2 data-i18n="mixTitle">Woher der Strom gerade kommt</h2>
-      <div class="sharebar" id="sharebar"></div>
-      <div class="legend" id="legend"></div>
+      <div class="mixlayout">
+        <div class="donutwrap">
+          <svg class="chart" id="mixDonut" role="img"></svg>
+          <div class="donutsplit" id="donutSplit"></div>
+        </div>
+        <div class="mixlegends">
+          <h3 class="subhead first" data-i18n="domesticLabel">Inländische Erzeugung</h3>
+          <div class="legend" id="legend"></div>
+          <h3 class="subhead" id="importedHead" data-i18n="importedLabel">Importiert</h3>
+          <div class="legend" id="importedLegend"></div>
+        </div>
+      </div>
       <h3 class="subhead" data-i18n="cleanScoreTitle">Saubere Versorgung · 24 Stunden</h3>
       <div class="tradestats compact" id="cleanScore"></div>
       <p class="note" data-i18n="mixNote"></p>
@@ -80,6 +90,16 @@
       <p class="note" data-i18n="compareNote"></p>
     </section>
 
+    <section id="seasonSection" hidden>
+      <h2 data-i18n="seasonTitle">Im Jahresverlauf</h2>
+      <div class="tradestats" id="seasonStats"></div>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="seasonChart" role="img"></svg></div>
+        <div class="tip" id="seasonTip"></div>
+      </div>
+      <p class="note" data-i18n="seasonNote"></p>
+    </section>
+
     <section id="storageSection" hidden>
       <h2 data-i18n="storageTitle">Pumpspeicher und Strompreis · 24 Stunden</h2>
       <div class="tradestats" id="storageStats"></div>
@@ -95,16 +115,32 @@
 
 
     <section id="tradeSection">
-      <h2 data-i18n="tradeTitle">Import und Export · 24 Stunden</h2>
+      <h2 data-i18n="tradeTitle">Import und Export</h2>
       <p class="stamp panelstamp" id="tradeStamp"></p>
       <div class="tradestats" id="tradeStats"></div>
+      <h3 class="subhead" data-i18n="tradeShape">Saldo · 24 Stunden</h3>
       <div class="plotwrap">
         <div class="scroller"><svg class="chart" id="tradeChart" role="img"></svg></div>
         <div class="tip" id="tradeTip"></div>
       </div>
       <p class="note" data-i18n="tradeNote"></p>
+
       <h3 class="subhead" data-i18n="perCountry">Je Nachbarland</h3>
+      <div class="flowkey">
+        <span><i style="background:var(--import)"></i><span data-i18n="importing">Import nach Österreich</span></span>
+        <span><i style="background:var(--export)"></i><span data-i18n="exporting">Export aus Österreich</span></span>
+      </div>
       <div class="sparks" id="sparks"></div>
+
+      <div id="dependencySection">
+        <h3 class="subhead" data-i18n="dependencyTitle">Importabhängigkeit · 7 Tage</h3>
+        <div class="plotwrap">
+          <div class="scroller"><svg class="chart" id="dependencyChart" role="img"></svg></div>
+          <div class="tip" id="dependencyTip"></div>
+        </div>
+        <p class="note" data-i18n="dependencyNote"></p>
+      </div>
+
       <details>
         <summary data-i18n="tableToggle">Werte als Tabelle</summary>
         <div id="tradeTable"></div>
@@ -120,44 +156,6 @@
         <div class="tip" id="moneyTip"></div>
       </div>
       <p class="note" data-i18n="moneyNote"></p>
-    </section>
-
-    <section id="flowSection">
-      <h2 data-i18n="flowTitle">Grenzüberschreitende Flüsse</h2>
-      <p class="stamp panelstamp" id="flowStamp"></p>
-      <div class="tradestats compact" id="flowNet"></div>
-      <div class="flowkey">
-        <span><i style="background:var(--import)"></i><span data-i18n="importing">Import nach Österreich</span></span>
-        <span><i style="background:var(--export)"></i><span data-i18n="exporting">Export aus Österreich</span></span>
-      </div>
-      <div class="flows" id="flows"></div>
-      <p class="note" data-i18n="flowNote"></p>
-
-      <div id="dependencySection">
-        <h3 class="subhead" data-i18n="dependencyTitle">Importabhängigkeit · 7 Tage</h3>
-        <div class="plotwrap">
-          <div class="scroller"><svg class="chart" id="dependencyChart" role="img"></svg></div>
-          <div class="tip" id="dependencyTip"></div>
-        </div>
-        <p class="note" data-i18n="dependencyNote"></p>
-      </div>
-    </section>
-
-    <section id="forecastSection" hidden>
-      <h2 data-i18n="forecastTitle">Ausblick · nächste 24 Stunden</h2>
-      <div class="forecastgrid">
-        <div>
-          <h3 class="subhead" data-i18n="solarForecast">Photovoltaik-Prognose</h3>
-          <div class="forecaststat" id="solarForecastStat"></div>
-          <svg class="chart" id="solarForecastChart" role="img"></svg>
-        </div>
-        <div>
-          <h3 class="subhead" data-i18n="priceForecast">Day-Ahead-Preis</h3>
-          <div class="forecaststat" id="priceForecastStat"></div>
-          <svg class="chart" id="priceForecastChart" role="img"></svg>
-        </div>
-      </div>
-      <p class="note" data-i18n="forecastNote"></p>
     </section>
 
     <section id="riverSection" hidden>
@@ -188,6 +186,6 @@
   <div id="error" class="err" hidden></div>
 
 </div>
-<script src="app.js?v=e6a78ac34e"></script>
+<script src="app.js?v=51efc8d5e2"></script>
 </body>
 </html>

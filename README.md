@@ -1,9 +1,9 @@
 # Woher kommt der Strom?
 
 A small, dependency-free page showing where Austria's electricity is coming
-from: the current mix, seven-day history and comparisons, import dependency,
-cross-border flows, pumped-storage operation, the energy balance, and the next
-day's solar and price outlook.
+from: the current mix as a two-ring donut, seven-day history and comparisons,
+a year of seasonal context, import and export with cross-border detail,
+pumped-storage operation and the energy balance.
 
 **→ [rfuzzo.github.io/woher-kommt-der-strom](https://rfuzzo.github.io/woher-kommt-der-strom/)**
 
@@ -37,11 +37,17 @@ Everything comes from the [Energy-Charts v2 API](https://api.energy-charts.info/
 | Generation mix, 24 h / 7 d shape, comparisons, load, renewable share | `/v2/public_power?country=at` |
 | Cross-border flows, import/export balance | `/v2/cbpf?country=at` |
 | Day-ahead price, trade valuation | `/v2/price?bzn=AT` |
-| Solar forecast | `/v2/public_power_forecast?country=at` |
 | Import composition | `/v2/public_power?country={cz,de,hu,it,si,ch}` |
+| Seasonal context, 365 days | `/ren_share_daily_avg?country=at&year=-1` |
 
 The API rate-limits (HTTP 429) when the neighbour countries are requested
 back to back, so `get()` retries with backoff. Do not remove that.
+
+`ren_share_daily_avg` is the one endpoint requested without the `/v2` prefix.
+`add_season()` asks for the v2 path first and falls back to the root one, and
+`daily_pairs()` reads either body shape — v2's rows of `{timestamp, values}`
+or the older flat `{days, data}`. If the v2 path turns out to serve it, the
+fallback and the second branch of `daily_pairs()` can both go.
 
 Licence: CC BY 4.0, attribution `energy-charts.info`; prices additionally
 Bundesnetzagentur | SMARD.de. Both render in the page footer.
@@ -102,10 +108,29 @@ python3 scripts/check_import_mix.py
 ```
 
 The panel shows **gross** imports (the sum of all inflows), which is larger
-than the net balance in the panel above it.
+than the net balance shown elsewhere.
 
 `renewableShareSupply` is our own calculation — domestic plus attributed
 imported renewables over total supply — and is not a figure the API provides.
+
+### The donut mixes two figures on purpose
+
+The outer ring is the source, the inner ring says whether that source stood in
+Austria. Both rings are shares of one total: domestic generation plus positive
+net imports.
+
+That total forces a choice, because the import mix is measured on **gross**
+inflows while the headline import figure is the **net** commercial balance.
+`add_supply_mix()` therefore applies the import mix's *shares* to the net
+figure rather than its megawatts, so the ring closes on the same supply total
+the tiles and the table use. Using the mix's own megawatts would overshoot the
+circle whenever Austria is importing and exporting at the same time, which is
+most of the day.
+
+Imported segments are hatched rather than given their own hues. They reuse the
+source colours — so hydro is blue whichever side of the border it came from —
+and the texture carries both "imported" and "estimated" without spending six
+more slots out of a palette that was validated at its current size.
 
 ### The money figures are a valuation, not a settlement
 
@@ -133,9 +158,16 @@ but are not identical.
   Reordering the groups changes which colours sit next to each other and voids
   that result. Three light-mode series fall below 3:1 contrast, which is why
   every value is directly labelled and each chart has a table view.
-- **Forecasts stay visually separate.** Solar and price use two charts rather
-  than a dual axis, which would make their apparent relationship depend on an
-  arbitrary choice of scales.
+- **The seasonal panel leads with the trailing mean.** Daily renewable share
+  swings by tens of points with the weather, so the raw series is drawn pale
+  behind a 30-day mean. The most recent day may still be partial, which is why
+  it is labelled with its own date rather than called "today".
+- **Import and export is one panel.** The 24 h balance, the per-neighbour
+  cards and the seven-day import dependency all come from `cbpf` and share one
+  timestamp; they were three blocks saying the same thing in three ways. Each
+  neighbour card takes its headline number from `flows`, which walks back to
+  that border's newest published reading, and its shape from the padded
+  series — the last point of the series is not always live.
 
 ## Running locally
 
@@ -157,10 +189,15 @@ Built with the help of [Claude Code](https://claude.com/claude-code).
 ## Ideas
 
 - River discharge against hydro generation — does the run-of-river fleet
-  visibly track the water? Care needed not to imply more causation than the
-  data carries.
-- Grid frequency from `/v2/frequency` — Austria shares the Continental Europe
-  synchronous area, so it is the same frequency as Germany. Effectively live,
-  but the API is CORS-locked, so it needs a proxy or the Actions rebuild.
-- The seasonal flip from net exporter to net importer, which 24 hours of data
-  cannot show.
+  visibly track the water? Only defensible if narrowed to run-of-river against
+  the Danube gauges; reservoir hydro follows dispatch, not water.
+- Installed capacity against current output, from `/v2/installed_power`. Would
+  give the megawatts a ceiling to sit under. Needs checking first that
+  `public_power` covers the same fleet — if it under-reports self-consumed
+  rooftop PV, the capacity factor is an artefact rather than a fact.
+- Hours below €0 over a longer window, as a structural read on surplus.
+
+Deliberately not doing: grid frequency. It is measured in Freiburg and is the
+same across all of Continental Europe, so it is not an Austrian number, and
+one-second data would advertise a liveness the rest of the page is careful to
+disclaim.

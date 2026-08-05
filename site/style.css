@@ -268,9 +268,54 @@ h2 {
   transform: translateY(1px);
 }
 
+/* Imported shares reuse the source colours, so the swatch has to carry the
+   same hatch the donut does. Rows set background-color only; the stripes come
+   from here. */
+.legend .sw.imported {
+  background-image: repeating-linear-gradient(45deg,
+    transparent 0 2px, var(--surface) 2px 3.5px);
+}
+
 .legend .nm { color: var(--ink); }
 .legend .mw { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .legend .pc { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
+
+/* ── the mix donut ──────────────────────────────────────────────────── */
+
+.mixlayout {
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+  gap: 26px 34px;
+  align-items: center;
+}
+
+.donutwrap { max-width: 340px; width: 100%; }
+.donutwrap svg { overflow: visible; }
+
+/* Qualified with `.chart` so these win over the shared `.chart text` rule,
+   which is otherwise more specific and would render both at 11px muted. */
+.chart text.donutv { font: 600 30px system-ui, -apple-system, sans-serif; fill: var(--ink); letter-spacing: -.02em; }
+.chart text.donutk { font: 500 12px system-ui, -apple-system, sans-serif; fill: var(--ink-muted); letter-spacing: .04em; }
+
+.donutsplit {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.donutsplit i {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  margin-right: 7px;
+}
+
+.mixlegends .subhead.first { margin-top: 0; }
+.mixlegends .subhead { margin: 20px 0 8px; }
 
 /* ── charts ─────────────────────────────────────────────────────────── */
 
@@ -449,15 +494,6 @@ h2 {
 .comparecard .delta.bad { color: var(--import); }
 .comparecard .base { color: var(--ink-muted); font-size: 11px; margin-top: 2px; }
 
-.forecastgrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 26px;
-}
-.forecastgrid > div + div { border-left: 1px solid var(--hairline); padding-left: 26px; }
-.forecastgrid .subhead { margin-top: 0; }
-.forecaststat { color: var(--ink-2); font-size: 13px; margin: -5px 0 8px; }
-
 .balanceeq {
   display: flex;
   align-items: stretch;
@@ -503,28 +539,10 @@ h2 {
 }
 
 .spark .sh .nm { color: var(--ink); }
-.spark .sh .val { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.spark .sh .val { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; font-weight: 600; }
+.spark .sh .val.imp { color: var(--import); }
+.spark .sh .val.exp { color: var(--export); }
 .spark svg { width: 100%; display: block; }
-
-/* ── flows ──────────────────────────────────────────────────────────── */
-
-.flows { display: flex; flex-direction: column; gap: 3px; }
-
-.flowrow {
-  display: grid;
-  grid-template-columns: 128px 1fr 88px;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  padding: 3px 0;
-}
-
-.flowrow .nm { color: var(--ink); }
-.flowrow .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
-
-.flowtrack { position: relative; height: 20px; }
-.flowtrack .zero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--axis); left: 50%; }
-.flowtrack .bar { position: absolute; top: 3px; height: 14px; border-radius: 3px; }
 
 .flowkey { display: flex; gap: 18px; font-size: 13px; color: var(--ink-2); margin-bottom: 14px; }
 .flowkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
@@ -568,14 +586,16 @@ footer p { margin: 0 0 9px; max-width: 76ch; }
   color: var(--ink);
 }
 
+@media (max-width: 820px) {
+  .mixlayout { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .mixlegends { width: 100%; }
+}
+
 @media (max-width: 560px) {
   .wrap { padding: 22px 14px 48px; }
   section { padding: 17px 15px; }
-  .flowrow { grid-template-columns: 92px 1fr 76px; gap: 8px; font-size: 13px; }
   .tile .v { font-size: 25px; }
   .sectionhead { align-items: flex-start; flex-direction: column; }
-  .forecastgrid { grid-template-columns: 1fr; }
-  .forecastgrid > div + div { border-left: 0; border-top: 1px solid var(--hairline); padding: 20px 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
