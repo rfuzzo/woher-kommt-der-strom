@@ -58,62 +58,6 @@
       <p class="note" data-i18n="dayNote"></p>
     </section>
 
-    <section id="compareSection">
-      <h2 data-i18n="compareTitle">Heute im Vergleich</h2>
-      <div class="comparegrid" id="compareGrid"></div>
-      <p class="note" data-i18n="compareNote"></p>
-    </section>
-
-    <section id="balanceSection" hidden>
-      <h2 data-i18n="balanceTitle">Energiebilanz · 24 Stunden</h2>
-      <div class="balanceeq" id="balanceEquation"></div>
-      <div class="plotwrap">
-        <div class="scroller"><svg class="chart" id="balanceChart" role="img"></svg></div>
-        <div class="tip" id="balanceTip"></div>
-      </div>
-      <p class="note" data-i18n="balanceNote"></p>
-    </section>
-
-    <section id="dependencySection">
-      <h2 data-i18n="dependencyTitle">Importabhängigkeit · 7 Tage</h2>
-      <div class="plotwrap">
-        <div class="scroller"><svg class="chart" id="dependencyChart" role="img"></svg></div>
-        <div class="tip" id="dependencyTip"></div>
-      </div>
-      <p class="note" data-i18n="dependencyNote"></p>
-    </section>
-
-    <section id="forecastSection" hidden>
-      <h2 data-i18n="forecastTitle">Ausblick · nächste 24 Stunden</h2>
-      <div class="forecastgrid">
-        <div>
-          <h3 class="subhead" data-i18n="solarForecast">Photovoltaik-Prognose</h3>
-          <div class="forecaststat" id="solarForecastStat"></div>
-          <svg class="chart" id="solarForecastChart" role="img"></svg>
-        </div>
-        <div>
-          <h3 class="subhead" data-i18n="priceForecast">Day-Ahead-Preis</h3>
-          <div class="forecaststat" id="priceForecastStat"></div>
-          <svg class="chart" id="priceForecastChart" role="img"></svg>
-        </div>
-      </div>
-      <p class="note" data-i18n="forecastNote"></p>
-    </section>
-
-    <section id="storageSection" hidden>
-      <h2 data-i18n="storageTitle">Pumpspeicher und Strompreis · 24 Stunden</h2>
-      <div class="tradestats" id="storageStats"></div>
-      <h3 class="subhead" data-i18n="storageOperation">Speicherbetrieb</h3>
-      <div class="plotwrap">
-        <div class="scroller"><svg class="chart" id="storageChart" role="img"></svg></div>
-        <div class="tip" id="storageTip"></div>
-      </div>
-      <h3 class="subhead" data-i18n="price24">Day-Ahead-Preis</h3>
-      <svg class="chart" id="storagePriceChart" role="img"></svg>
-      <p class="note" data-i18n="storageNote"></p>
-    </section>
-
-
     <section id="impMixSection">
       <h2 data-i18n="impMixTitle">Woraus der importierte Strom besteht</h2>
       <div class="sharebar" id="impMixBar"></div>
@@ -129,6 +73,26 @@
         <div id="impMixTable"></div>
       </details>
     </section>
+
+    <section id="compareSection">
+      <h2 data-i18n="compareTitle">Heute im Vergleich</h2>
+      <div class="comparegrid" id="compareGrid"></div>
+      <p class="note" data-i18n="compareNote"></p>
+    </section>
+
+    <section id="storageSection" hidden>
+      <h2 data-i18n="storageTitle">Pumpspeicher und Strompreis · 24 Stunden</h2>
+      <div class="tradestats" id="storageStats"></div>
+      <h3 class="subhead" data-i18n="storageOperation">Speicherbetrieb</h3>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="storageChart" role="img"></svg></div>
+        <div class="tip" id="storageTip"></div>
+      </div>
+      <h3 class="subhead" data-i18n="price24">Day-Ahead-Preis</h3>
+      <svg class="chart" id="storagePriceChart" role="img"></svg>
+      <p class="note" data-i18n="storageNote"></p>
+    </section>
+
 
     <section id="tradeSection">
       <h2 data-i18n="tradeTitle">Import und Export · 24 Stunden</h2>
@@ -168,6 +132,32 @@
       </div>
       <div class="flows" id="flows"></div>
       <p class="note" data-i18n="flowNote"></p>
+
+      <div id="dependencySection">
+        <h3 class="subhead" data-i18n="dependencyTitle">Importabhängigkeit · 7 Tage</h3>
+        <div class="plotwrap">
+          <div class="scroller"><svg class="chart" id="dependencyChart" role="img"></svg></div>
+          <div class="tip" id="dependencyTip"></div>
+        </div>
+        <p class="note" data-i18n="dependencyNote"></p>
+      </div>
+    </section>
+
+    <section id="forecastSection" hidden>
+      <h2 data-i18n="forecastTitle">Ausblick · nächste 24 Stunden</h2>
+      <div class="forecastgrid">
+        <div>
+          <h3 class="subhead" data-i18n="solarForecast">Photovoltaik-Prognose</h3>
+          <div class="forecaststat" id="solarForecastStat"></div>
+          <svg class="chart" id="solarForecastChart" role="img"></svg>
+        </div>
+        <div>
+          <h3 class="subhead" data-i18n="priceForecast">Day-Ahead-Preis</h3>
+          <div class="forecaststat" id="priceForecastStat"></div>
+          <svg class="chart" id="priceForecastChart" role="img"></svg>
+        </div>
+      </div>
+      <p class="note" data-i18n="forecastNote"></p>
     </section>
 
     <section id="riverSection" hidden>
@@ -175,6 +165,16 @@
       <p class="stamp" id="riverStamp"></p>
       <div class="rivers" id="rivers"></div>
       <p class="note" data-i18n="riverNote"></p>
+    </section>
+
+    <section id="balanceSection" hidden>
+      <h2 data-i18n="balanceTitle">Energiebilanz · 24 Stunden</h2>
+      <div class="balanceeq" id="balanceEquation"></div>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="balanceChart" role="img"></svg></div>
+        <div class="tip" id="balanceTip"></div>
+      </div>
+      <p class="note" data-i18n="balanceNote"></p>
     </section>
 
     <footer>
