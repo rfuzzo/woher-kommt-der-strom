@@ -12,15 +12,13 @@ from anyone else's server.
 
 Sister project: [Wie viel Wasser hat Österreich?](https://rfuzzo.github.io/woher-kommt-das-wasser/)
 ([source](https://github.com/rfuzzo/woher-kommt-das-wasser)) — precipitation
-and snow depth from GeoSphere Austria. The split is deliberate: that page
-covers the *inputs* to the water cycle, this one shows river discharge only
-where it drives generation.
+and snow depth from GeoSphere Austria.
 
 ## How it works
 
 ```
 GitHub Actions (every 30 min)
-  ├─ scripts/fetch_data.py    fetch + reshape + precompute (incl. eHYD gauges)
+  ├─ scripts/fetch_data.py    fetch + reshape + precompute
   │    └─ site/data.json      one blob, everything the page needs
   ├─ scripts/trace_origin.py  every 3 h, cache-gated: 32 calls
   │    └─ site/trace.json     traced origin for the Sankey
@@ -61,62 +59,11 @@ fallback and the second branch of `daily_pairs()` can both go.
 Licence: CC BY 4.0, attribution `energy-charts.info`; prices additionally
 Bundesnetzagentur | SMARD.de. Both render in the page footer.
 
-River discharge comes from [eHYD](https://ehyd.gv.at/) (Hydrographie
-Österreich, CC BY 4.0), via `/services/Diagram/pegelBgis?hzbnr=<id>` — one
-gauge per river, the most downstream inside Austria.
-
-This was originally fetched **from the browser**: eHYD sent
-`access-control-allow-origin: *`, which made it the freshest panel on the page
-and needed no rebuild. **It stopped sending that header in August 2026**, so
-the browser call began failing CORS and the panel silently hid itself — the
-graceful-degradation path working as designed, which is also why the breakage
-was easy to miss. `add_rivers()` now fetches the gauges during the build
-instead. That costs the freshness edge (readings are as old as the build, up
-to ~30 min) but they still beat the electricity data by around an hour, and
-they carry their own timestamp on the panel. If eHYD is unreachable the panel
-stays hidden and the rest of the page is unaffected.
-
-eHYD restored the header on 7 August 2026, so moving this back to the browser
-is now possible and buys back the freshness. It is deliberately left
-server-side: the outage failed *silently*, and a build-time fetch cannot.
-
-### Why this keeps using an undocumented endpoint
-
-`pegelBgis` is internal — it is what eHYD's own map calls, not a published API
-— so it carries no compatibility promise, and it has already broken once.
-
-There **is** a documented alternative, found while looking for one for the
-sister project: **Downloaddienst Hydrographie Österreich**, an OGC API Features
-service from the BMLUK, registered in the INSPIRE catalogue, CC BY 4.0, with
-CORS and ISO timestamps.
-
-```
-https://gis.lfrz.gv.at/api/geodata/i000501/ogc/features/v1
-  collections/i000501:pegel_aktuell   → 300 gauges, current readings
-```
-
-It is not used here, because it is a **current-snapshot** service and this
-panel is built on two things it does not carry:
-
-- `niedrigwasser` / `mittelwasser` reference values — the "23 % of mean water ·
-  below low water" framing and the NW/MW ticks. `messstellen_owf` holds station
-  identity (name, river, operator, built 1940) but no reference series.
-- Seven days of history — the sparklines, where the hydropeaking sawtooth on
-  the Enns and Mur is visible.
-
-Reading current values from the documented service and thresholds from the
-internal one would mean depending on both, which is worse than depending on
-one. So the trade is deliberate: this panel keeps `pegelBgis` for the richer
-series and degrades to hidden if it goes away. The sister project uses the
-documented service instead, because there a current reading is all it needs and
-a headline number cannot quietly vanish.
-
 ### This is not live
 
 Energy-Charts publishes settled data 2–3 hours behind the wall clock, and the
 lag is in the source rather than here. The page shows the data timestamp and
-the publication lag instead of implying it is current. The river panel carries
-its own, somewhat fresher timestamp.
+the publication lag instead of implying it is current.
 
 ### The import mix is attribution, not tracing — and that was checked
 
@@ -299,9 +246,6 @@ Built with the help of [Claude Code](https://claude.com/claude-code).
 
 ## Ideas
 
-- River discharge against hydro generation — does the run-of-river fleet
-  visibly track the water? Only defensible if narrowed to run-of-river against
-  the Danube gauges; reservoir hydro follows dispatch, not water.
 - Installed capacity against current output, from `/v2/installed_power`. Would
   give the megawatts a ceiling to sit under. Needs checking first that
   `public_power` covers the same fleet — if it under-reports self-consumed
