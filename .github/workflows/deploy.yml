@@ -45,6 +45,32 @@ jobs:
           print(f"ok - {gen:.0f} MW across {len(d['groups'])} groups")
           PY
 
+      # The origin trace costs 32 calls against a rate-limited API, so it runs
+      # on its own three-hour cadence rather than on every build. The bucket
+      # is the cache key: within the same three-hour window the previous
+      # result is restored and the tracer is skipped.
+      - name: Three-hour bucket for the origin trace
+        id: bucket
+        run: echo "key=$(( $(date +%s) / 10800 ))" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the last origin trace
+        id: tracecache
+        uses: actions/cache@v4
+        with:
+          path: site/trace.json
+          key: trace-${{ steps.bucket.outputs.key }}
+          # Falls back to the newest trace from an earlier bucket, so the
+          # panel shows slightly stale data instead of vanishing while the
+          # new one is computed.
+          restore-keys: trace-
+
+      # Never fatal: a failed or missing trace leaves the previous file in
+      # place, and the page hides the panel if there is none at all.
+      - name: Trace where the power started
+        if: steps.tracecache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: python scripts/trace_origin.py
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

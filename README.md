@@ -14,9 +14,11 @@ from anyone else's server.
 
 ```
 GitHub Actions (every 30 min)
-  └─ scripts/fetch_data.py   fetch + reshape + precompute
-       └─ site/data.json     one blob, everything the page needs
-            └─ site/         uploaded as the Pages artifact
+  ├─ scripts/fetch_data.py    fetch + reshape + precompute
+  │    └─ site/data.json      one blob, everything the page needs
+  ├─ scripts/trace_origin.py  every 3 h, cache-gated: 32 calls
+  │    └─ site/trace.json     traced origin for the Sankey
+  └─ site/                    uploaded as the Pages artifact
 ```
 
 The browser makes one request for data and does no arithmetic on it — every
@@ -38,6 +40,7 @@ Everything comes from the [Energy-Charts v2 API](https://api.energy-charts.info/
 | Cross-border flows, import/export balance | `/v2/cbpf?country=at` |
 | Day-ahead price, trade valuation | `/v2/price?bzn=AT` |
 | Import composition | `/v2/public_power?country={cz,de,hu,it,si,ch}` |
+| Traced origin (Sankey) | `/v2/public_power` + `/v2/cbpf` for 16 zones |
 | Seasonal context, 365 days | `/ren_share_daily_avg?country=at&year=-1` |
 
 The API rate-limits (HTTP 429) when the neighbour countries are requested
@@ -99,9 +102,9 @@ About one percentage point on the headline. Austria's imports come
 overwhelmingly from Czechia and Germany, both large producers whose own import
 share is small next to their production, so the dilution is second-order.
 
-That is why the site keeps the simple method: tracing costs 32 API calls per
-build against a rate-limited endpoint, to move the headline by a point. Re-run
-the check if the import pattern shifts:
+That is why the *import mix* panel keeps the simple method: tracing costs 32
+API calls per build against a rate-limited endpoint, to move that headline by
+a point. Re-run the check if the import pattern shifts:
 
 ```bash
 python3 scripts/check_import_mix.py
@@ -112,6 +115,46 @@ than the net balance shown elsewhere.
 
 `renewableShareSupply` is our own calculation — domestic plus attributed
 imported renewables over total supply — and is not a figure the API provides.
+
+### The Sankey does run the tracing
+
+The one-point gap above is small for a technology breakdown, but tracing
+answers a question attribution cannot answer *at all*: **which country** the
+power started in. Attribution can only ever name Austria's six neighbours.
+Tracing names the country the electricity was generated in, however many
+borders it crossed to get here — Polish coal arriving via Czechia, French
+nuclear via Germany. Neither shows up in the import-mix panel; both show up in
+the Sankey.
+
+`scripts/trace_origin.py` runs the same solve as the checker with origin kept
+as a second dimension. The only change is the right-hand side: instead of six
+columns (one per technology), the system carries one column per
+`(zone, technology)` pair, each zone seeding only its own columns.
+
+```
+B[i][(z, k)] = P_i[k]  if z == i  else  0
+```
+
+Solving propagates those labelled columns through the network exactly as
+before, so the algorithm is unchanged — there is just more bookkeeping riding
+along. Austria's row of the solution is the mix of everything entering the
+country, broken down by where it started; multiplied by Austrian load, that is
+the Sankey.
+
+Because it is expensive, it runs on a **three-hour cadence** rather than every
+30 minutes. The workflow keys an `actions/cache` entry to a three-hour bucket:
+within the same window the previous `trace.json` is restored and the tracer is
+skipped. `restore-keys: trace-` means a miss still restores the newest earlier
+result, so the panel shows slightly stale data with its own timestamp instead
+of disappearing. A failed trace is never fatal — the step is
+`continue-on-error`, the previous file is published, and if there is no file at
+all the panel simply stays hidden.
+
+Limits worth knowing: average participation assumes power mixes completely
+within each zone, so it cannot point at individual plants; and the 16-country
+network is truncated, so flows entering it from outside are treated as if they
+originated at the boundary.
+
 
 ### The donut mixes two figures on purpose
 
@@ -190,7 +233,9 @@ but are not identical.
 ## Running locally
 
 ```bash
-python3 scripts/fetch_data.py && python3 -m http.server 8931 --directory site
+python3 scripts/fetch_data.py
+python3 scripts/trace_origin.py      # optional; powers the origin Sankey
+python3 -m http.server 8931 --directory site
 ```
 
 Then open <http://localhost:8931>.

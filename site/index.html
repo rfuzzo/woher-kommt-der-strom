@@ -6,7 +6,7 @@
 <title>Woher kommt der Strom? — Österreichs Stromnetz</title>
 <meta name="description" content="Woher Österreichs Strom gerade kommt: Erzeugungsmix, Tagesverlauf und Grenzflüsse, aus offenen Daten von Energy-Charts (Fraunhofer ISE).">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="style.css?v=26d5cd293a">
+<link rel="stylesheet" href="style.css?v=4993b65510">
 </head>
 <body>
 <div class="wrap">
@@ -81,6 +81,27 @@
       <details>
         <summary data-i18n="tableToggle">Werte als Tabelle</summary>
         <div id="impMixTable"></div>
+      </details>
+    </section>
+
+    <section id="traceSection" hidden>
+      <div class="sectionhead">
+        <h2 data-i18n="traceTitle">Wo der Strom wirklich herkommt</h2>
+        <div class="segmented" id="traceButtons">
+          <button type="button" data-trace="now" data-i18n="traceNow">jetzt</button>
+          <button type="button" data-trace="day" data-i18n="traceDay">24 h</button>
+        </div>
+      </div>
+      <p class="stamp panelstamp" id="traceStamp"></p>
+      <div class="tradestats compact" id="traceStats"></div>
+      <div class="plotwrap">
+        <div class="scroller"><svg class="chart" id="traceChart" role="img"></svg></div>
+        <div class="tip" id="traceTip"></div>
+      </div>
+      <p class="note" data-i18n="traceNote"></p>
+      <details>
+        <summary data-i18n="tableToggle">Werte als Tabelle</summary>
+        <div id="traceTable"></div>
       </details>
     </section>
 
@@ -186,6 +207,6 @@
   <div id="error" class="err" hidden></div>
 
 </div>
-<script src="app.js?v=d2b795a870"></script>
+<script src="app.js?v=d69e3614ea"></script>
 </body>
 </html>

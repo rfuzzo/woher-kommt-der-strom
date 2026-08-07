@@ -601,3 +601,18 @@ footer p { margin: 0 0 9px; max-width: 76ch; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ── traced origin (Sankey) ─────────────────────────────────────────── */
+
+#traceChart { min-width: 460px; }
+#traceChart .sankeylabel { fill: var(--ink); font-size: 12px; font-weight: 500; }
+#traceChart .sankeypct {
+  fill: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#traceChart path { transition: fill-opacity .12s; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  #traceChart path { transition: none; }
+}

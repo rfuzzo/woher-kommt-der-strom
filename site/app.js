@@ -25,6 +25,28 @@ const RIVERS = [
 ];
 const COLOR = k => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim();
 
+// Zone codes the origin tracer can return. Austria has no border with most
+// of these — they show up because the power transited a neighbour.
+const ZONE_NAMES = {
+  at: ['Österreich', 'Austria'], cz: ['Tschechien', 'Czechia'],
+  de: ['Deutschland', 'Germany'], hu: ['Ungarn', 'Hungary'],
+  it: ['Italien', 'Italy'], si: ['Slowenien', 'Slovenia'],
+  ch: ['Schweiz', 'Switzerland'], pl: ['Polen', 'Poland'],
+  sk: ['Slowakei', 'Slovakia'], fr: ['Frankreich', 'France'],
+  nl: ['Niederlande', 'Netherlands'], be: ['Belgien', 'Belgium'],
+  dk: ['Dänemark', 'Denmark'], hr: ['Kroatien', 'Croatia'],
+  rs: ['Serbien', 'Serbia'], ro: ['Rumänien', 'Romania'],
+  other: ['Übrige', 'Other'],
+};
+const zoneName = c => (ZONE_NAMES[c] || [c, c])[LANG === 'de' ? 0 : 1];
+
+const TECH_NAMES = {
+  hydro: ['Wasserkraft', 'Hydro'], fossil: ['Fossil', 'Fossil'],
+  wind: ['Wind', 'Wind'], solar: ['Photovoltaik', 'Solar'],
+  nuclear: ['Kernkraft', 'Nuclear'], other: ['Sonstige', 'Other'],
+};
+const techName = k => (TECH_NAMES[k] || [k, k])[LANG === 'de' ? 0 : 1];
+
 const I18N = {
   de: {
     title: 'Woher kommt der Strom?',
@@ -77,6 +99,16 @@ const I18N = {
     balanceCol: 'Saldo',
     netBalance: 'Netto-Saldo',
     sourceAge: 'Datenquelle rund {h} alt',
+    traceTitle: 'Wo der Strom wirklich herkommt',
+    traceNow: 'jetzt',
+    traceDay: '24 h',
+    tracedAcross: 'Flussverfolgung über {n} Länder',
+    fromAustria: 'Aus Österreich',
+    fromAbroad: 'Aus dem Ausland',
+    renewableTraced: 'Erneuerbar · verfolgt',
+    origin: 'Herkunft',
+    traceContribution: 'Anteil am Verbrauch',
+    traceNote: 'Nicht zugerechnet, sondern verfolgt: Ein Gleichungssystem über 16 Länder rechnet zurück, wo der Strom tatsächlich erzeugt wurde (Average Participation nach Bialek/Tranberg). Deshalb tauchen hier Länder auf, mit denen Österreich gar keine Grenze teilt — polnische Kohle über Tschechien, französischer Atomstrom über Deutschland. Links die Herkunftsländer, rechts die Erzeugungsart. Das Verfahren nimmt an, dass sich Strom in jedem Land vollständig durchmischt; einzelne Kraftwerke lassen sich damit nicht zuordnen.',
     impMixTitle: 'Woraus der importierte Strom besteht',
     impMix24: 'Importmix · 24 Stunden',
     fossilNuclear: 'Fossil und Kernkraft',
@@ -186,6 +218,16 @@ const I18N = {
     balanceCol: 'Balance',
     netBalance: 'Net balance',
     sourceAge: 'source data about {h} old',
+    traceTitle: 'Where the power really started',
+    traceNow: 'now',
+    traceDay: '24 h',
+    tracedAcross: 'flow-traced across {n} countries',
+    fromAustria: 'From Austria',
+    fromAbroad: 'From abroad',
+    renewableTraced: 'Renewable · traced',
+    origin: 'Origin',
+    traceContribution: 'Share of consumption',
+    traceNote: 'Traced, not attributed: a linear system across 16 countries solves back to where the power was actually generated (average participation, Bialek/Tranberg). That is why countries Austria shares no border with appear here — Polish coal arriving via Czechia, French nuclear via Germany. Origins on the left, generation type on the right. The method assumes power mixes completely within each country, so it cannot point at individual plants.',
     impMixTitle: 'What the imported power is made of',
     impMix24: 'Import mix · 24 hours',
     fossilNuclear: 'Fossil and nuclear',
@@ -711,6 +753,188 @@ function renderDay() {
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerleave', hide);
   svg.addEventListener('pointerdown', show);
+}
+
+/* ── traced origin (Sankey) ───────────────────────────────────────────── */
+
+let TRACE = null;
+let TRACE_VIEW = 'now';
+
+/* Country -> technology, one ribbon per traced pair.
+   Both columns are scaled from the same total, so a ribbon keeps its
+   thickness end to end; the shorter column is centred rather than stretched,
+   which would silently change what a given height means. */
+function renderTrace() {
+  const section = document.getElementById('traceSection');
+  const view = TRACE && TRACE[TRACE_VIEW];
+  if (!view || !view.links || !view.links.length) { section.hidden = true; return; }
+  section.hidden = false;
+
+  for (const button of document.querySelectorAll('#traceButtons button')) {
+    button.classList.toggle('active', button.dataset.trace === TRACE_VIEW);
+  }
+
+  const stamp = document.getElementById('traceStamp');
+  stamp.textContent = '';
+  stamp.append(el('span', 'dot'), document.createTextNode(
+    `${t('asOf')} ${dateFmt().format(new Date(TRACE.at * 1000))} · `
+    + t('tracedAcross').replace('{n}', TRACE.zoneCount)));
+
+  const stats = document.getElementById('traceStats');
+  stats.textContent = '';
+  for (const s of [
+    { k: t('fromAustria'), v: nf(view.domesticPct, 1), u: '%' },
+    { k: t('fromAbroad'), v: nf(100 - view.domesticPct, 1), u: '%' },
+    { k: t('renewableTraced'), v: nf(view.renewablePct, 1), u: '%' },
+  ]) {
+    const card = el('div', 'tstat');
+    card.append(el('div', 'k', s.k), el('div', 'v', `${s.v}<small>${s.u}</small>`));
+    stats.append(card);
+  }
+
+  drawSankey(view);
+
+  const rows = view.links.map(l =>
+    `<tr><td>${zoneName(l.c)}</td><td>${techName(l.k)}</td>`
+    + `<td class="n">${nf(l.mw)}</td>`
+    + `<td class="n">${nf(l.mw / view.consumptionMw * 100, 1)}</td></tr>`).join('');
+  document.getElementById('traceTable').innerHTML =
+    `<table><caption>${t('traceTitle')}</caption><thead><tr>`
+    + `<th>${t('origin')}</th><th>${t('source')}</th>`
+    + `<th class="n">MW</th><th class="n">${t('share')} %</th>`
+    + `</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function drawSankey(view) {
+  const svg = document.getElementById('traceChart');
+  const outer = svg.parentElement;
+  const W = Math.max(svg.clientWidth || outer.clientWidth || 720, 460);
+  const LW = 112, RW = 124, NW = 11, GAP = 7, TOP = 8;
+  const rows = Math.max(view.countries.length, view.techs.length);
+  const H = Math.max(300, rows * 46);
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.textContent = '';
+  svg.setAttribute('aria-label',
+    `${t('traceTitle')}: ${view.countries.map(c => `${zoneName(c.c)} ${c.pct} %`).join(', ')}`);
+
+  const total = view.countries.reduce((a, c) => a + c.mw, 0) || 1;
+  const usable = H - TOP * 2 - (rows - 1) * GAP;
+  const scale = usable / total;
+  const x0 = LW + NW, x1 = W - RW - NW, xm = (x0 + x1) / 2;
+
+  // Centre each column: with unequal node counts the gaps differ, and
+  // top-aligning would make the two sides look mismatched.
+  const place = (nodes, xNode, colour) => {
+    const span = nodes.reduce((a, n) => a + n.mw * scale, 0) + (nodes.length - 1) * GAP;
+    let y = (H - span) / 2;
+    const out = {};
+    for (const n of nodes) {
+      const h = Math.max(n.mw * scale, 1);
+      out[n.key] = { y, h, cursor: y };
+      svg.append(svgEl('rect', {
+        x: xNode, y, width: NW, height: h, rx: 2,
+        fill: colour(n), 'fill-opacity': 0.9,
+      }));
+      y += h + GAP;
+    }
+    return out;
+  };
+
+  const left = place(
+    view.countries.map(c => ({ key: c.c, mw: c.mw })),
+    LW, () => 'var(--ink-muted)');
+  const right = place(
+    view.techs.map(tech => ({ key: tech.k, mw: tech.mw })),
+    W - RW - NW, n => `var(--${n.key})`);
+
+  const ribbons = svgEl('g', {});
+  svg.append(ribbons);
+
+  for (const l of view.links) {
+    const a = left[l.c], b = right[l.k];
+    if (!a || !b) continue;
+    const h = Math.max(l.mw * scale, 0.6);
+    const ay = a.cursor, by = b.cursor;
+    a.cursor += h; b.cursor += h;
+
+    const path = svgEl('path', {
+      d: `M${x0},${ay}C${xm},${ay} ${xm},${by} ${x1},${by}`
+        + `L${x1},${by + h}C${xm},${by + h} ${xm},${ay + h} ${x0},${ay + h}Z`,
+      fill: `var(--${l.k})`, 'fill-opacity': 0.4, stroke: 'none',
+    });
+    path.dataset.c = l.c;
+    path.dataset.k = l.k;
+    path.dataset.mw = l.mw;
+    ribbons.append(path);
+  }
+
+  /* A two-line label needs ~26px, but a 1.7 % band is only a few pixels
+     tall, so labels on thin nodes would sit on top of each other. Lay them
+     out at their natural centres, then push overlaps downward and, if that
+     runs past the bottom, back up — the usual two-pass declutter. Leader
+     lines are skipped: the label stays within a few pixels of its node. */
+  const LABEL_H = 26;
+  const labelRow = (nodes, pos, anchor, xText, key, name) => {
+    const items = nodes
+      .map(n => ({ n, slot: pos[key(n)] }))
+      .filter(o => o.slot)
+      .map(o => ({ ...o, cy: o.slot.y + o.slot.h / 2 }))
+      .sort((a, b) => a.cy - b.cy);
+
+    for (let i = 1; i < items.length; i++) {
+      const min = items[i - 1].cy + LABEL_H;
+      if (items[i].cy < min) items[i].cy = min;
+    }
+    for (let i = items.length - 1; i >= 0; i--) {
+      const max = (i === items.length - 1 ? H - LABEL_H / 2
+        : items[i + 1].cy - LABEL_H);
+      if (items[i].cy > max) items[i].cy = max;
+    }
+
+    for (const { n, cy } of items) {
+      const label = svgEl('text', {
+        x: xText, y: cy - 1, 'text-anchor': anchor, class: 'sankeylabel',
+      });
+      label.textContent = name(n);
+      const pct = svgEl('text', {
+        x: xText, y: cy + 12, 'text-anchor': anchor, class: 'sankeypct',
+      });
+      pct.textContent = `${nf(n.pct, 1)} %`;
+      svg.append(label, pct);
+    }
+  };
+  labelRow(view.countries, left, 'end', LW - 9, n => n.c, n => zoneName(n.c));
+  labelRow(view.techs, right, 'start', W - RW + 9, n => n.k, n => techName(n.k));
+
+  // hover
+  const tip = document.getElementById('traceTip');
+  const wrap = svg.closest('.plotwrap');
+  const paths = [...ribbons.querySelectorAll('path')];
+
+  const clear = () => {
+    for (const p of paths) p.setAttribute('fill-opacity', 0.4);
+    tip.classList.remove('on');
+  };
+  for (const p of paths) {
+    p.addEventListener('pointerenter', () => {
+      for (const q of paths) q.setAttribute('fill-opacity', q === p ? 0.85 : 0.12);
+      const mw = Number(p.dataset.mw);
+      tip.innerHTML = `<div class="t">${zoneName(p.dataset.c)} → ${techName(p.dataset.k)}</div>`
+        + `<div class="r"><span class="sw" style="background:var(--${p.dataset.k})"></span>`
+        + `${t('traceContribution')}<span class="v">${nf(mw)} MW`
+        + `<em>${nf(mw / view.consumptionMw * 100, 1)} %</em></span></div>`;
+      tip.classList.add('on');
+      const box = p.getBoundingClientRect();
+      const wb = wrap.getBoundingClientRect();
+      tip.style.left = Math.min(
+        Math.max(box.left - wb.left + box.width / 2 - 90, 0),
+        Math.max(wb.width - tip.offsetWidth, 0)) + 'px';
+      tip.style.top = Math.max(box.top - wb.top - 8, 0) + 'px';
+    });
+  }
+  svg.addEventListener('pointerleave', clear);
 }
 
 function renderRangeButtons() {
@@ -1675,6 +1899,7 @@ function renderAll() {
   renderStorage();
   renderTrade();
   renderImportMix();
+  renderTrace();
   renderMoney();
   renderRivers();
   renderFooter();
@@ -1703,6 +1928,13 @@ document.getElementById('theme').addEventListener('click', () => {
   renderMoney();
 });
 
+document.getElementById('traceButtons').addEventListener('click', event => {
+  const button = event.target.closest('button[data-trace]');
+  if (!button) return;
+  TRACE_VIEW = button.dataset.trace;
+  renderTrace();
+});
+
 document.getElementById('rangeButtons').addEventListener('click', event => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
@@ -1718,7 +1950,10 @@ if (localStorage.getItem('theme')) {
 let resizeTimer;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (DATA) { renderDay(); renderSeason(); renderBalance(); renderDependency(); renderStorage(); renderTrade(); } }, 150);
+  resizeTimer = setTimeout(() => {
+    if (DATA) { renderDay(); renderSeason(); renderBalance(); renderDependency(); renderStorage(); renderTrade(); }
+    if (TRACE) renderTrace();
+  }, 150);
 });
 
 fetch('data.json?' + Date.now())
@@ -1730,6 +1965,13 @@ fetch('data.json?' + Date.now())
     // Independent of the main payload: if ehyd is unreachable the rest of
     // the page is unaffected and the panel stays hidden.
     loadRivers().catch(e => console.warn('rivers unavailable:', e));
+
+    // trace.json is produced on a slower cadence than data.json and may be
+    // absent on a fresh deploy, so its failure is contained too.
+    fetch('trace.json?' + Date.now())
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+      .then(d => { TRACE = d; renderTrace(); })
+      .catch(e => console.warn('origin trace unavailable:', e));
   })
   .catch(e => {
     const box = document.getElementById('error');
