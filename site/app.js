@@ -114,15 +114,6 @@ const I18N = {
     avgEarned: 'Ø erlöst',
     runningTotal: 'Laufende Summe',
     moneyNote: 'Bewertet zum Day-Ahead-Börsenpreis, gerechnet auf die kommerziellen Handelsmengen — eine Größenordnung, keine Abrechnung: reale Verträge laufen nicht alle über die Börse. Import ist nicht automatisch schlecht: eingekaufter Strom ist oft billiger, als ein Gaskraftwerk hochzufahren. An diesem Tag lag der Ø-Importpreis allerdings über dem Ø-Exportpreis.',
-    riverTitle: 'Flüsse · Abfluss',
-    riverNote: 'Abfluss an je einem Pegel pro Fluss, dem jeweils untersten in Österreich. NW und MW sind die Referenzwerte der Hydrographie für Niedrig- und Mittelwasser an dieser Messstelle. Quelle ist eHYD; die Messwerte tragen ihren eigenen Zeitstempel und sind meist rund eine Stunde aktueller als die Stromdaten oben.',
-    belowNW: 'unter Niedrigwasser',
-    nearNW: 'um Niedrigwasser',
-    belowMW: 'unter Mittelwasser',
-    aboveMW: 'über Mittelwasser',
-    ofMean: 'des Mittelwassers',
-    riverLive: 'Pegeldaten von eHYD',
-    days7: '7 Tage',
     days: 'Tage',
     noData: 'keine Daten veröffentlicht',
     range7: '7 Tage',
@@ -234,15 +225,6 @@ const I18N = {
     avgEarned: 'avg earned',
     runningTotal: 'Running total',
     moneyNote: 'Valued at the day-ahead exchange price against commercial trade volumes — an order of magnitude, not a settlement: real contracts do not all go through the exchange. Importing is not automatically bad, since bought power is often cheaper than firing up a gas plant. On this day, though, the average import price was above the average export price.',
-    riverTitle: 'Rivers · discharge',
-    riverNote: 'Discharge at one gauge per river, the most downstream one inside Austria. NW and MW are the hydrographic service\'s own reference values for low water and mean water at that gauge. Source is eHYD; the readings carry their own timestamp and are usually about an hour fresher than the electricity data above.',
-    belowNW: 'below low water',
-    nearNW: 'around low water',
-    belowMW: 'below mean water',
-    aboveMW: 'above mean water',
-    ofMean: 'of mean water',
-    riverLive: 'Gauge data from eHYD',
-    days7: '7 days',
     days: 'days',
     noData: 'not published',
     range7: '7 days',
@@ -1498,6 +1480,285 @@ function renderMoney() {
   });
 }
 
+/* ── what the imports are made of ─────────────────────────────────────── */
+
+// Stack order for the import mix, colour-validated as this sequence.
+// Nuclear only ever appears here — Austria has none of its own.
+const IMP_ORDER = ['hydro', 'fossil', 'wind', 'solar', 'nuclear', 'other'];
+
+function renderImportMix() {
+  const sec = document.getElementById('impMixSection');
+  const im = DATA.importMix;
+  if (!im || !im.groups || !im.groups.length) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const groups = IMP_ORDER.map(k => im.groups.find(g => g.key === k)).filter(Boolean);
+
+  const bar = document.getElementById('impMixBar');
+  const leg = document.getElementById('impMixLegend');
+  bar.textContent = '';
+  leg.textContent = '';
+  for (const g of groups) {
+    if (g.pct <= 0) continue;
+    const sp = el('span');
+    sp.style.flex = `${g.pct} 1 0`;
+    sp.style.background = `var(--${g.key})`;
+    sp.title = `${label(g)} · ${nf(g.pct, 1)} %`;
+    bar.append(sp);
+  }
+  for (const g of groups) {
+    const r = el('div', 'row');
+    const sw = el('span', 'sw');
+    sw.style.background = `var(--${g.key})`;
+    r.append(sw, el('span', 'nm', label(g)),
+      el('span', 'mw', `${nf(g.mw)} MW`),
+      el('span', 'pc', `${nf(g.pct, 1)} %`));
+    leg.append(r);
+  }
+
+  const rows = groups.map(g =>
+    `<tr><td>${label(g)}</td><td class="n">${nf(g.mw)}</td><td class="n">${nf(g.pct, 1)}</td></tr>`).join('');
+  document.getElementById('impMixTable').innerHTML =
+    `<table><caption>${t('impMixTitle')}</caption>
+     <thead><tr><th>${t('source')}</th><th class="n">MW</th><th class="n">${t('share')} %</th></tr></thead>
+     <tbody>${rows}</tbody></table>`;
+
+  drawImportMixChart(groups, im);
+}
+
+function drawImportMixChart(groups, im) {
+  const svg = document.getElementById('impMixChart');
+  const N = im.t.length;
+  if (N < 2) return;
+
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320);
+  const H = 250;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.textContent = '';
+  svg.setAttribute('aria-label', `${t('impMix24')} — ${groups.map(g => label(g)).join(', ')}`);
+
+  const P = { t: 26, r: PAD.r, b: PAD.b, l: PAD.l };
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+  // A step counts only when every group has a value for it. A partial step
+  // would understate the stack, which is what made a missing border look like
+  // the imports briefly stopping.
+  const published = im.t.map((_, i) => groups.every(g => g.series[i] != null));
+  const totals = im.t.map((_, i) =>
+    published[i] ? groups.reduce((a, g) => a + g.series[i], 0) : null);
+  const known = finite(totals);
+  if (!known.length) return;
+  const step = niceStep(Math.max(...known, 1), 4);
+  const top = Math.max(Math.ceil(Math.max(...known) / step) * step, step);
+
+  const x = i => P.l + (i / (N - 1)) * iw;
+  const y = v => P.t + ih - (v / top) * ih;
+
+  for (let v = 0; v <= top + step / 2; v += step) {
+    svg.append(svgEl('line', {
+      class: v === 0 ? 'axisline' : 'gridline',
+      x1: P.l, x2: W - P.r, y1: y(v), y2: y(v),
+    }));
+    const lab = svgEl('text', { x: P.l - 8, y: y(v) + 4, 'text-anchor': 'end' });
+    lab.textContent = v === 0 ? '0' : nf(v);
+    svg.append(lab);
+  }
+  const unit = svgEl('text', { x: P.l - 8, y: P.t - 10, 'text-anchor': 'end' });
+  unit.textContent = 'MW';
+  svg.append(unit);
+
+  // One run per stretch of published steps, so a gap is a gap in every band.
+  const runs = segments(totals);
+  let base = new Array(N).fill(0);
+  for (const g of groups) {
+    const upper = base.map((b, i) => published[i] ? b + g.series[i] : 0);
+    if (upper.every((v, i) => !published[i] || v - base[i] < 0.05)) { base = upper; continue; }
+    for (const run of runs) {
+      const idx = run.values.map((_, k) => run.from + k);
+      const d = idx.map((i, k) => `${k ? 'L' : 'M'}${x(i)},${y(upper[i])}`).join('')
+        + [...idx].reverse().map(i => `L${x(i)},${y(base[i])}`).join('') + 'Z';
+      svg.append(svgEl('path', {
+        d, fill: `var(--${g.key})`, stroke: 'var(--surface)',
+        'stroke-width': 2, 'stroke-linejoin': 'round',
+      }));
+    }
+    base = upper;
+  }
+
+  timeAxis(svg, im.t, x, H, W, iw, clockFmt());
+
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 });
+  svg.append(cursor);
+
+  const tip = document.getElementById('impMixTip');
+  const wrap = svg.closest('.plotwrap');
+  const show = ev => {
+    const b = svg.getBoundingClientRect();
+    const px = (ev.clientX - b.left) / b.width * W;
+    let i = Math.round((px - P.l) / iw * (N - 1));
+    i = Math.max(0, Math.min(N - 1, i));
+    cursor.setAttribute('x1', x(i));
+    cursor.setAttribute('x2', x(i));
+    cursor.setAttribute('opacity', 1);
+    const stamp = `<div class="t">${dateFmt().format(new Date(im.t[i] * 1000))}</div>`;
+    if (totals[i] == null) {
+      tip.innerHTML = `${stamp}<div class="r tot"><span class="sw" style="background:var(--axis)"></span>${t('noData')}</div>`;
+    } else {
+      const tot = totals[i] || 1;
+      const rows = [...groups].reverse().filter(g => g.series[i] > 0.05).map(g =>
+        `<div class="r"><span class="sw" style="background:var(--${g.key})"></span>${label(g)}<span class="v">${nf(g.series[i])} MW<em>${nf(g.series[i] / tot * 100, 1)} %</em></span></div>`).join('');
+      tip.innerHTML = `${stamp}${rows}
+        <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('imported')}<span class="v">${nf(totals[i])} MW</span></div>`;
+    }
+    tip.classList.add('on');
+    const wb = wrap.getBoundingClientRect();
+    const rel = x(i) / W * b.width + (b.left - wb.left);
+    tip.style.left = Math.min(Math.max(rel + 14, 0), wb.width - tip.offsetWidth) + 'px';
+    tip.style.top = '6px';
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', () => {
+    tip.classList.remove('on'); cursor.setAttribute('opacity', 0);
+  });
+}
+
+/* ── what the trade cost ──────────────────────────────────────────────── */
+
+// Largest of 1/2/5 × 10^k that still leaves at most `count` ticks.
+function niceStep(range, count) {
+  const rough = range / count;
+  const mag = 10 ** Math.floor(Math.log10(rough));
+  for (const m of [1, 2, 5, 10]) {
+    if (rough <= m * mag) return m * mag;
+  }
+  return 10 * mag;
+}
+
+const eur = (v, frac = 0) => new Intl.NumberFormat(LANG === 'de' ? 'de-AT' : 'en-GB',
+  { style: 'currency', currency: 'EUR', maximumFractionDigits: frac,
+    minimumFractionDigits: frac }).format(v);
+
+// Millions read better than nine digits on a headline figure.
+const eurShort = v => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v < 0 ? '−' : '') + eur(a / 1e6, 2).replace(/([\d.,]+)/, '$1') + ' M';
+  if (a >= 1e4) return (v < 0 ? '−' : '') + eur(Math.round(a / 1e3) * 1e3);
+  return eur(v);
+};
+
+function renderMoney() {
+  const sec = document.getElementById('moneySection');
+  const m = DATA.money;
+  if (!m || !m.cumulative || m.cumulative.length < 2) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const box = document.getElementById('moneyStats');
+  box.textContent = '';
+  const stats = [
+    { k: t('importCost'), v: eurShort(m.importCost), cls: 'imp',
+      d: m.avgImportPrice != null ? `${t('avgPaid')} ${nf(m.avgImportPrice, 1)} €/MWh` : '' },
+    { k: t('exportRevenue'), v: eurShort(m.exportRevenue), cls: 'exp',
+      d: m.avgExportPrice != null ? `${t('avgEarned')} ${nf(m.avgExportPrice, 1)} €/MWh` : '' },
+    { k: t('netCost'), v: eurShort(m.net), d: t('paidOut') },
+  ];
+  for (const s of stats) {
+    const c = el('div', 'tstat');
+    const val = el('div', 'v', s.v);
+    if (s.cls) val.classList.add(s.cls);
+    c.append(el('div', 'k', s.k), val);
+    if (s.d) c.append(el('div', 'd', s.d));
+    box.append(c);
+  }
+
+  const svg = document.getElementById('moneyChart');
+  const N = m.cumulative.length;
+  const W = Math.max(svg.clientWidth || svg.parentElement.clientWidth || 720, 320);
+  const H = 210;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.textContent = '';
+  svg.setAttribute('aria-label', `${t('moneyTitle')} — ${t('runningTotal')} ${eur(m.net)}`);
+
+  const P = { t: 26, r: PAD.r, b: PAD.b, l: 58 };
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+
+  // Round tick step, so the axis reads 0 / 1 / 2 / 3 M rather than whatever
+  // quarters of the data range happen to be.
+  const rawHi = Math.max(...m.cumulative, 0), rawLo = Math.min(...m.cumulative, 0);
+  const step = niceStep((rawHi - rawLo) || 1, 5);
+  const hi = Math.ceil(rawHi / step) * step;
+  const lo = Math.floor(rawLo / step) * step;
+  const span = (hi - lo) || step;
+
+  const x = i => P.l + (i / (N - 1)) * iw;
+  const y = v => P.t + ih - ((v - lo) / span) * ih;
+
+  const millions = Math.max(Math.abs(hi), Math.abs(lo)) >= 1e6;
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    svg.append(svgEl('line', {
+      class: Math.abs(v) < step / 1000 ? 'axisline' : 'gridline',
+      x1: P.l, x2: W - P.r, y1: y(v), y2: y(v),
+    }));
+    const lab = svgEl('text', { x: P.l - 8, y: y(v) + 4, 'text-anchor': 'end' });
+    lab.textContent = v === 0 ? '0'
+      : millions ? nf(v / 1e6, step < 1e6 ? 1 : 0) : nf(Math.round(v / 1e3));
+    svg.append(lab);
+  }
+  const unit = svgEl('text', { x: P.l - 8, y: P.t - 10, 'text-anchor': 'end' });
+  unit.textContent = millions ? 'Mio €' : '1000 €';
+  svg.append(unit);
+
+  const line = m.cumulative.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
+  svg.append(svgEl('path', {
+    d: `${line}L${x(N - 1)},${y(0)}L${x(0)},${y(0)}Z`,
+    fill: 'var(--import)', 'fill-opacity': 0.16,
+  }));
+  svg.append(svgEl('path', {
+    d: line, fill: 'none', stroke: 'var(--import)', 'stroke-width': 2,
+    'stroke-linejoin': 'round',
+  }));
+
+  const fmt = clockFmt();
+  const every = Math.max(1, Math.round(N / 8));
+  m.t.forEach((ts, i) => {
+    if (i % every && i !== N - 1) return;
+    const lab = svgEl('text', {
+      x: x(i), y: H - 8,
+      'text-anchor': i === N - 1 ? 'end' : i === 0 ? 'start' : 'middle',
+    });
+    lab.textContent = fmt.format(new Date(ts * 1000));
+    svg.append(lab);
+  });
+
+  const cursor = svgEl('line', { class: 'cursor', y1: P.t, y2: P.t + ih, opacity: 0 });
+  svg.append(cursor);
+
+  const tip = document.getElementById('moneyTip');
+  const wrap = svg.closest('.plotwrap');
+  const show = ev => {
+    const b = svg.getBoundingClientRect();
+    const px = (ev.clientX - b.left) / b.width * W;
+    let i = Math.round((px - P.l) / iw * (N - 1));
+    i = Math.max(0, Math.min(N - 1, i));
+    cursor.setAttribute('x1', x(i));
+    cursor.setAttribute('x2', x(i));
+    cursor.setAttribute('opacity', 1);
+    tip.innerHTML = `<div class="t">${dateFmt().format(new Date(m.t[i] * 1000))}</div>
+      <div class="r tot"><span class="sw" style="background:var(--import)"></span>${t('runningTotal')}<span class="v">${eur(m.cumulative[i])}</span></div>`;
+    tip.classList.add('on');
+    const wb = wrap.getBoundingClientRect();
+    const rel = x(i) / W * b.width + (b.left - wb.left);
+    tip.style.left = Math.min(Math.max(rel + 14, 0), wb.width - tip.offsetWidth) + 'px';
+    tip.style.top = '6px';
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', () => {
+    tip.classList.remove('on'); cursor.setAttribute('opacity', 0);
+  });
+}
+
 /* ── rivers ───────────────────────────────────────────────────────────
    Fetched in the build, not here: eHYD stopped sending
    `access-control-allow-origin`, so the browser call this used to make now
@@ -1858,7 +2119,6 @@ function renderAll() {
   renderImportMix();
   renderTrace();
   renderMoney();
-  renderRivers();
   renderFooter();
 }
 
