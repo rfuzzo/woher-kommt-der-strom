@@ -80,12 +80,36 @@ eHYD restored the header on 7 August 2026, so moving this back to the browser
 is now possible and buys back the freshness. It is deliberately left
 server-side: the outage failed *silently*, and a build-time fetch cannot.
 
-`pegelBgis` is an internal interface — it is what eHYD's own map calls, not a
-published API — so it carries no compatibility promise, and it has now proved
-that once. That risk is acceptable here, where rivers are secondary context in
-a panel that can hide itself. The sister project reaches the opposite
-conclusion for the same endpoint, because there river flow would be a headline
-number, and a headline cannot quietly vanish.
+### Why this keeps using an undocumented endpoint
+
+`pegelBgis` is internal — it is what eHYD's own map calls, not a published API
+— so it carries no compatibility promise, and it has already broken once.
+
+There **is** a documented alternative, found while looking for one for the
+sister project: **Downloaddienst Hydrographie Österreich**, an OGC API Features
+service from the BMLUK, registered in the INSPIRE catalogue, CC BY 4.0, with
+CORS and ISO timestamps.
+
+```
+https://gis.lfrz.gv.at/api/geodata/i000501/ogc/features/v1
+  collections/i000501:pegel_aktuell   → 300 gauges, current readings
+```
+
+It is not used here, because it is a **current-snapshot** service and this
+panel is built on two things it does not carry:
+
+- `niedrigwasser` / `mittelwasser` reference values — the "23 % of mean water ·
+  below low water" framing and the NW/MW ticks. `messstellen_owf` holds station
+  identity (name, river, operator, built 1940) but no reference series.
+- Seven days of history — the sparklines, where the hydropeaking sawtooth on
+  the Enns and Mur is visible.
+
+Reading current values from the documented service and thresholds from the
+internal one would mean depending on both, which is worse than depending on
+one. So the trade is deliberate: this panel keeps `pegelBgis` for the richer
+series and degrades to hidden if it goes away. The sister project uses the
+documented service instead, because there a current reading is all it needs and
+a headline number cannot quietly vanish.
 
 ### This is not live
 
