@@ -10,6 +10,12 @@ pumped-storage operation and the energy balance.
 German and English, light and dark, no cookies, no trackers, no JavaScript
 from anyone else's server.
 
+Sister project: [Wie viel Wasser hat Österreich?](https://rfuzzo.github.io/woher-kommt-das-wasser/)
+([source](https://github.com/rfuzzo/woher-kommt-das-wasser)) — precipitation
+and snow depth from GeoSphere Austria. The split is deliberate: that page
+covers the *inputs* to the water cycle, this one shows river discharge only
+where it drives generation.
+
 ## How it works
 
 ```
@@ -70,8 +76,16 @@ to ~30 min) but they still beat the electricity data by around an hour, and
 they carry their own timestamp on the panel. If eHYD is unreachable the panel
 stays hidden and the rest of the page is unaffected.
 
-Worth re-testing occasionally: if eHYD restores the CORS header, moving this
-back to the browser is a small change and buys back the freshness.
+eHYD restored the header on 7 August 2026, so moving this back to the browser
+is now possible and buys back the freshness. It is deliberately left
+server-side: the outage failed *silently*, and a build-time fetch cannot.
+
+`pegelBgis` is an internal interface — it is what eHYD's own map calls, not a
+published API — so it carries no compatibility promise, and it has now proved
+that once. That risk is acceptable here, where rivers are secondary context in
+a panel that can hide itself. The sister project reaches the opposite
+conclusion for the same endpoint, because there river flow would be a headline
+number, and a headline cannot quietly vanish.
 
 ### This is not live
 

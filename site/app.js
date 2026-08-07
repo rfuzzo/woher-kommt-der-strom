@@ -8,6 +8,7 @@
 // and lightness checks in both modes; reordering invalidates that.
 const ORDER = ['hydro', 'fossil', 'wind', 'solar', 'pumped', 'biomass', 'other'];
 const REPO = 'https://github.com/rfuzzo/woher-kommt-der-strom';
+const WASSER = 'https://rfuzzo.github.io/woher-kommt-das-wasser/';
 
 const COLOR = k => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim();
 
@@ -149,6 +150,7 @@ const I18N = {
     supplyTotal: 'Versorgung',
     sources: 'Erzeugung, Last, Grenzflüsse und Preis: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), gespeist aus <a href="https://transparency.entsoe.eu/">ENTSO-E</a> und <a href="https://www.apg.at/">APG</a>. Abflussdaten: <a href="https://ehyd.gv.at">ehyd.gv.at</a>, Hydrographie Österreich, CC BY 4.0.',
     credit: 'Idee inspiriert von <a href="https://holadelej.hu/">holadelej.hu</a> (Ungarn) — eigenständig gebaut, ohne Übernahme von Gestaltung oder Text.',
+    sister: 'Schwesterseite zum Wasser: <a href="' + WASSER + '">Wie viel Wasser hat Österreich?</a> — Niederschlag und Schneehöhe aus den TAWES-Stationen der GeoSphere Austria.',
     colophon: 'Quellcode auf <a href="' + REPO + '">GitHub</a> — offen und nachbaubar. Gebaut mit Unterstützung von <a href="https://claude.com/claude-code">Claude Code</a>.',
     err: 'Die Daten konnten nicht geladen werden.',
     hours: 'h', mins: 'min'
@@ -266,8 +268,9 @@ const I18N = {
     domesticLabel: 'Domestic generation',
     importedLabel: 'Imported · estimated',
     supplyTotal: 'Supply',
-    sources: 'Generation, load, cross-border flows and price: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), fed from <a href="https://transparency.entsoe.eu/">ENTSO-E</a> and <a href="https://www.apg.at/">APG</a>.',
+    sources: 'Generation, load, cross-border flows and price: <a href="https://api.energy-charts.info/">Energy-Charts</a> (Fraunhofer ISE), fed from <a href="https://transparency.entsoe.eu/">ENTSO-E</a> and <a href="https://www.apg.at/">APG</a>. Discharge data: <a href="https://ehyd.gv.at">ehyd.gv.at</a>, Hydrographie Österreich, CC BY 4.0.',
     credit: 'Concept inspired by <a href="https://holadelej.hu/">holadelej.hu</a> (Hungary) — built independently, with no design or copy taken from it.',
+    sister: 'Sister page on water: <a href="' + WASSER + '">Wie viel Wasser hat Österreich?</a> — precipitation and snow depth from GeoSphere Austria\'s TAWES stations.',
     colophon: 'Source on <a href="' + REPO + '">GitHub</a> — open, and rebuildable. Built with the help of <a href="https://claude.com/claude-code">Claude Code</a>.',
     err: 'The data could not be loaded.',
     hours: 'h', mins: 'min'
@@ -1826,6 +1829,7 @@ function renderFooter() {
   document.getElementById('licLine').textContent =
     [DATA.license, DATA.price && DATA.price.license].filter(Boolean).join(' · ');
   document.querySelector('[data-i18n="credit"]').innerHTML = t('credit');
+  document.getElementById('sister').innerHTML = t('sister');
   document.getElementById('colophon').innerHTML = t('colophon');
 }
 
