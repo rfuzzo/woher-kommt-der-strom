@@ -133,7 +133,7 @@ const I18N = {
     netImport: 'Nettoimport',
     balanced: 'ausgeglichen',
     asOf: 'Stand',
-    lag: 'veröffentlicht mit rund {h} Verzögerung',
+    lag: 'Daten rund {h} alt',
     mixNote: 'Der äußere Ring zeigt die Quelle, der innere die Herkunft: inländische Erzeugung plus positive Nettoimporte ergeben 100 % des Stroms, der in diesem Moment zur Verfügung steht. Bei Nettoexport gibt es keinen Importanteil. Die schraffierten Segmente sind importiert und geschätzt — der Importmix ist eine Zurechnung (siehe unten) und wird hier anteilig auf den Nettoimport umgelegt. Pumpspeicher zählt als Erzeugung: die Energie zum Hochpumpen stammt aus einem früheren Zeitpunkt.',
     dayNote: 'Die Flächen sind die inländische Erzeugung, die kräftige Linie ist die Last. Liegt die Linie unter den Flächen, exportiert Österreich mehr, als es importiert.',
     domesticLabel: 'Inländische Erzeugung',
@@ -244,7 +244,7 @@ const I18N = {
     netImport: 'net import',
     balanced: 'balanced',
     asOf: 'As of',
-    lag: 'published about {h} later',
+    lag: 'data about {h} old',
     mixNote: 'The outer ring is the source, the inner ring the origin: domestic generation plus positive net imports make up 100% of the electricity available at that moment. During net export, the import share is zero. Hatched segments are imported and estimated — the import mix is an attribution (see below), scaled here onto the net import figure. Pumped storage counts as generation: the energy used to pump the water uphill came from an earlier moment.',
     dayNote: 'The areas are domestic generation; the heavy line is load. Where the line sits below the areas, Austria is exporting more than it imports.',
     domesticLabel: 'Domestic generation',
@@ -365,8 +365,8 @@ function timeAxis(svg, times, x, H, W, iw, fmt, maxTicks = 8) {
 function renderStamp() {
   const at = new Date(DATA.dataAt * 1000);
   const bits = [`${t('asOf')} ${dateFmt().format(at)}`];
-  if (DATA.publishedAt) {
-    const mins = Math.round((DATA.publishedAt - DATA.dataAt) / 60);
+  if (DATA.dataAt) {
+    const mins = Math.max(0, Math.round((Date.now() / 1000 - DATA.dataAt) / 60));
     const s = mins >= 90 ? `${Math.round(mins / 60)} ${t('hours')}` : `${mins} ${t('mins')}`;
     bits.push(t('lag').replace('{h}', s));
   }

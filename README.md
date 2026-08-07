@@ -61,9 +61,12 @@ Bundesnetzagentur | SMARD.de. Both render in the page footer.
 
 ### This is not live
 
-Energy-Charts publishes settled data 2–3 hours behind the wall clock, and the
-lag is in the source rather than here. The page shows the data timestamp and
-the publication lag instead of implying it is current.
+Energy-Charts usually publishes Austrian data 2–3 hours behind the wall clock,
+and that source delay cannot be removed here. The newest rows can still be
+revised, so the fetcher uses the freshest complete sample unless the recent
+run-of-river series contains an implausible jump; only then does it fall back
+to the interval before the discontinuity. The page shows the data timestamp
+and its current age instead of implying it is live.
 
 ### The import mix is attribution, not tracing — and that was checked
 
@@ -198,7 +201,10 @@ but are not identical.
   together and recovered one step later, while storage and load stayed
   smooth — no domestic response, no load change, so energy could not balance.
 - **Use `available_until`, not the last row.** The API pads the tail with
-  intervals it has not settled yet.
+  intervals it has not published yet. The rows immediately before that
+  watermark can still be provisional, so a run-of-river continuity guard
+  rejects the kind of ~900 MW false step observed on 7 August 2026 without
+  delaying every normal build by a fixed hour.
 - **Generation + imports does not equal load.** The balance panel explicitly
   subtracts pumping demand, which explains most of the midday difference. The
   remaining gap is left visible because generation, trading and load have
