@@ -42,7 +42,22 @@ jobs:
               sys.exit(f"refusing to publish: generation is {gen}")
           if not d.get("groups"):
               sys.exit("refusing to publish: no generation groups")
-          print(f"ok - {gen:.0f} MW across {len(d['groups'])} groups")
+
+          # A load of zero is not a physical reading, so it can only come from
+          # a null being filled in somewhere. This shipped once already, on
+          # 7 Aug 2026, when available_until covered intervals whose load
+          # series was still unpublished. Fail the build rather than draw a
+          # country that stopped using electricity.
+          series = d["day"]["load"]
+          zeros = [i for i, v in enumerate(series) if not v or v <= 0]
+          if zeros:
+              sys.exit(f"refusing to publish: load is zero at {len(zeros)} "
+                       f"of {len(series)} samples (indices {zeros[:5]})")
+          if d["now"]["load"] <= 0:
+              sys.exit(f"refusing to publish: current load is {d['now']['load']}")
+
+          print(f"ok - {gen:.0f} MW across {len(d['groups'])} groups, "
+                f"load {d['now']['load']:.0f} MW, no gaps")
           PY
 
       # The origin trace costs 32 calls against a rate-limited API, so it runs

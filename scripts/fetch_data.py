@@ -35,6 +35,9 @@ HOURS_BACK = 24
 # Generation data lags roughly an hour, so over-fetch and trim to the last
 # complete sample.
 FETCH_DAYS = 8
+# Intervals to drop off the end beyond what the API calls available. Its
+# newest rows are provisional and get revised; see the note in main().
+SETTLE_LAG = 3
 
 # Energy-Charts series ids -> the seven groups the page draws, in the order
 # they stack (bottom to top). That order is also the colour order and it is
@@ -160,6 +163,26 @@ def clean(vals: list | None, n: int, scale: float = 1.0) -> list[float]:
     return [float(vals[i]) * scale
             if i < len(vals) and vals[i] is not None else 0.0
             for i in range(n)]
+
+
+def carried(vals: list | None, n: int, scale: float = 1.0) -> list[float]:
+    """Like clean(), but a gap holds the previous value instead of dropping
+    to zero.
+
+    For load, zero is not a physical reading — the country never stops
+    consuming electricity — so a null there is always a publication gap, and
+    zero-filling it draws a cliff. Trailing gaps are trimmed by the window
+    instead; this only covers holes in the middle.
+    """
+    vals = vals or []
+    out: list[float] = []
+    last = 0.0
+    for i in range(n):
+        v = vals[i] if i < len(vals) else None
+        if v is not None:
+            last = float(v) * scale
+        out.append(last)
+    return out
 
 
 def scaled(vals: list | None, n: int, scale: float = 1.0) -> list[float | None]:
@@ -579,21 +602,47 @@ def main() -> None:
     times, cols = columns(power)
     n = len(times)
 
-    # `available_until` is the API's own word on how far the settled data
-    # reaches. Prefer it, and fall back to walking back over unpublished
-    # nulls — taking the last row blindly can invent a zero-generation moment.
-    now_i = -1
+    # `available_until` says how far the settled data reaches, but it is a
+    # per-*endpoint* watermark, not a per-series one: the load series can
+    # still be null inside it while generation is published. Trusting it
+    # alone let clean() turn those nulls into a load of 0, which is what put
+    # a cliff to zero on the chart on 7 Aug 2026.
+    #
+    # So the watermark caps the window, and then we walk back to the last
+    # sample where the series the page actually leans on are present. Losing
+    # the last quarter-hour beats inventing a country that stopped consuming
+    # electricity.
+    now_i = n - 1
     until = power.get("available_until")
     if until:
         until_ts = int(datetime.fromisoformat(until).timestamp())
-        now_i = max((i for i, t in enumerate(times) if t <= until_ts), default=-1)
-    if now_i < 0:
-        for i in range(n - 1, -1, -1):
-            if cols.get("load", [None] * n)[i] is not None and cols.get("solar", [None] * n)[i] is not None:
-                now_i = i
-                break
+        now_i = max((i for i, t in enumerate(times) if t <= until_ts), default=n - 1)
+
+    load_col = cols.get("load") or [None] * n
+    solar_col = cols.get("solar") or [None] * n
+    dropped = 0
+    while now_i >= 0 and (load_col[now_i] is None or solar_col[now_i] is None):
+        now_i -= 1
+        dropped += 1
     if now_i < 0:
         raise SystemExit("no complete sample in public_power response")
+
+    # Present is not the same as settled. On 7 Aug 2026 the newest rows were
+    # inside available_until with load already published, yet run-of-river
+    # hydro read ~1,150 MW below the interval before it — a step no river can
+    # make. Measured against settled days, run-of-river moves 10-20 MW per
+    # quarter-hour and never more than ~240 MW; the provisional tail showed
+    # 1,009 MW. So the last few intervals are revised after publication, and
+    # the window backs off from them.
+    #
+    # The size of the margin is empirical, from that one episode. It costs 45
+    # minutes on a feed that already lags two to three hours, which is a cheap
+    # price for not drawing cliffs that never happened.
+    settle = min(SETTLE_LAG, now_i)
+    now_i -= settle
+    if dropped or settle:
+        print(f"  trimmed {dropped} unpublished + {settle} unsettled interval(s)",
+              file=sys.stderr)
 
     # Fail loudly on series we do not know about rather than silently
     # dropping megawatts out of the mix.
@@ -607,7 +656,7 @@ def main() -> None:
         for key, _de, _en, ids in GROUPS
     }
 
-    load = clean(cols.get("load"), n, scale)
+    load = carried(cols.get("load"), n, scale)
     pumping = clean(cols.get("hydro_pumped_storage_consumption"), n, scale)  # negative
     trading = clean(cols.get("cross_border_electricity_trading"), n, scale)
     rs_load = cols.get("renewable_share_of_load") or [None] * n
