@@ -35,9 +35,10 @@ HOURS_BACK = 24
 # Generation data lags roughly an hour, so over-fetch and trim to the last
 # complete sample.
 FETCH_DAYS = 8
-# Intervals to drop off the end beyond what the API calls available. Its
-# newest rows are provisional and get revised; see the note in main().
-SETTLE_LAG = 3
+# Intervals to drop off the end of what the API calls available. Its newest
+# rows are provisional and get revised; 4 is where revisions fall back into
+# normal variation. See the note in main().
+SETTLE_LAG = 4
 
 # Energy-Charts series ids -> the seven groups the page draws, in the order
 # they stack (bottom to top). That order is also the colour order and it is
@@ -618,31 +619,31 @@ def main() -> None:
         until_ts = int(datetime.fromisoformat(until).timestamp())
         now_i = max((i for i, t in enumerate(times) if t <= until_ts), default=n - 1)
 
+    # Present is not the same as settled: the newest rows are provisional and
+    # get revised. Comparing the 7 Aug 2026 window against the same intervals
+    # once settled, run-of-river hydro was wrong by ~900 MW at 0-2 intervals
+    # back from the watermark, ~150 MW at 3, and within normal variation from
+    # 4 onwards. So the margin is measured, not guessed.
+    #
+    # It is anchored to the watermark rather than subtracted on top of the
+    # null-walk below. Stacking the two made the lag depend on how many
+    # intervals happened to be unpublished — unbounded, and 75 min on the day
+    # it was written. This way it is fixed.
+    now_i = max(now_i - SETTLE_LAG, 0)
+
+    # Should find nothing once the margin has done its work, but a longer
+    # publication gap is still possible and zero load is never a reading.
     load_col = cols.get("load") or [None] * n
     solar_col = cols.get("solar") or [None] * n
-    dropped = 0
+    extra = 0
     while now_i >= 0 and (load_col[now_i] is None or solar_col[now_i] is None):
         now_i -= 1
-        dropped += 1
+        extra += 1
     if now_i < 0:
         raise SystemExit("no complete sample in public_power response")
-
-    # Present is not the same as settled. On 7 Aug 2026 the newest rows were
-    # inside available_until with load already published, yet run-of-river
-    # hydro read ~1,150 MW below the interval before it — a step no river can
-    # make. Measured against settled days, run-of-river moves 10-20 MW per
-    # quarter-hour and never more than ~240 MW; the provisional tail showed
-    # 1,009 MW. So the last few intervals are revised after publication, and
-    # the window backs off from them.
-    #
-    # The size of the margin is empirical, from that one episode. It costs 45
-    # minutes on a feed that already lags two to three hours, which is a cheap
-    # price for not drawing cliffs that never happened.
-    settle = min(SETTLE_LAG, now_i)
-    now_i -= settle
-    if dropped or settle:
-        print(f"  trimmed {dropped} unpublished + {settle} unsettled interval(s)",
-              file=sys.stderr)
+    if extra:
+        print(f"  {extra} interval(s) still unpublished {SETTLE_LAG} back "
+              f"from the watermark", file=sys.stderr)
 
     # Fail loudly on series we do not know about rather than silently
     # dropping megawatts out of the mix.
