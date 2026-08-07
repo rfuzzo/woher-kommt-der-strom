@@ -9,20 +9,6 @@
 const ORDER = ['hydro', 'fossil', 'wind', 'solar', 'pumped', 'biomass', 'other'];
 const REPO = 'https://github.com/rfuzzo/woher-kommt-der-strom';
 
-/* Rivers are fetched straight from the browser, not baked into data.json:
-   ehyd serves `access-control-allow-origin: *` and refreshes every ~15 min,
-   so this panel is roughly two hours fresher than the electricity data.
-   One representative gauge per river, each the most downstream one inside
-   Austria. `hzbnr` is ehyd's station id. */
-const EHYD = 'https://ehyd.gv.at/services/Diagram/pegelBgis?hzbnr=';
-const RIVERS = [
-  { river: 'Donau', en: 'Danube', hzbnr: 207373 },
-  { river: 'Inn', en: 'Inn', hzbnr: 201889 },
-  { river: 'Salzach', en: 'Salzach', hzbnr: 203539 },
-  { river: 'Enns', en: 'Enns', hzbnr: 205922 },
-  { river: 'Drau', en: 'Drava', hzbnr: 213595 },
-  { river: 'Mur', en: 'Mur', hzbnr: 211490 },
-];
 const COLOR = k => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim();
 
 // Zone codes the origin tracer can return. Austria has no border with most
@@ -127,14 +113,14 @@ const I18N = {
     avgEarned: 'Ø erlöst',
     runningTotal: 'Laufende Summe',
     moneyNote: 'Bewertet zum Day-Ahead-Börsenpreis, gerechnet auf die kommerziellen Handelsmengen — eine Größenordnung, keine Abrechnung: reale Verträge laufen nicht alle über die Börse. Import ist nicht automatisch schlecht: eingekaufter Strom ist oft billiger, als ein Gaskraftwerk hochzufahren. An diesem Tag lag der Ø-Importpreis allerdings über dem Ø-Exportpreis.',
-    riverTitle: 'Flüsse · live',
-    riverNote: 'Abfluss an je einem Pegel pro Fluss, dem jeweils untersten in Österreich. NW und MW sind die Referenzwerte der Hydrographie für Niedrig- und Mittelwasser an dieser Messstelle. Diese Werte kommen direkt aus eHYD und sind rund zwei Stunden aktueller als die Stromdaten oben.',
+    riverTitle: 'Flüsse · Abfluss',
+    riverNote: 'Abfluss an je einem Pegel pro Fluss, dem jeweils untersten in Österreich. NW und MW sind die Referenzwerte der Hydrographie für Niedrig- und Mittelwasser an dieser Messstelle. Quelle ist eHYD; die Messwerte tragen ihren eigenen Zeitstempel und sind meist rund eine Stunde aktueller als die Stromdaten oben.',
     belowNW: 'unter Niedrigwasser',
     nearNW: 'um Niedrigwasser',
     belowMW: 'unter Mittelwasser',
     aboveMW: 'über Mittelwasser',
     ofMean: 'des Mittelwassers',
-    riverLive: 'Direkt von eHYD geladen',
+    riverLive: 'Pegeldaten von eHYD',
     days7: '7 Tage',
     days: 'Tage',
     noData: 'keine Daten veröffentlicht',
@@ -246,14 +232,14 @@ const I18N = {
     avgEarned: 'avg earned',
     runningTotal: 'Running total',
     moneyNote: 'Valued at the day-ahead exchange price against commercial trade volumes — an order of magnitude, not a settlement: real contracts do not all go through the exchange. Importing is not automatically bad, since bought power is often cheaper than firing up a gas plant. On this day, though, the average import price was above the average export price.',
-    riverTitle: 'Rivers · live',
-    riverNote: 'Discharge at one gauge per river, the most downstream one inside Austria. NW and MW are the hydrographic service\'s own reference values for low water and mean water at that gauge. These readings come straight from eHYD and are about two hours fresher than the electricity data above.',
+    riverTitle: 'Rivers · discharge',
+    riverNote: 'Discharge at one gauge per river, the most downstream one inside Austria. NW and MW are the hydrographic service\'s own reference values for low water and mean water at that gauge. Source is eHYD; the readings carry their own timestamp and are usually about an hour fresher than the electricity data above.',
     belowNW: 'below low water',
     nearNW: 'around low water',
     belowMW: 'below mean water',
     aboveMW: 'above mean water',
     ofMean: 'of mean water',
-    riverLive: 'Loaded directly from eHYD',
+    riverLive: 'Gauge data from eHYD',
     days7: '7 days',
     days: 'days',
     noData: 'not published',
@@ -1509,48 +1495,12 @@ function renderMoney() {
   });
 }
 
-/* ── rivers (fetched live, client-side) ───────────────────────────────── */
+/* ── rivers ───────────────────────────────────────────────────────────
+   Fetched in the build, not here: eHYD stopped sending
+   `access-control-allow-origin`, so the browser call this used to make now
+   fails CORS. See add_rivers() in scripts/fetch_data.py. */
 
 let RIVER_DATA = null;
-
-const num = v => {
-  const x = parseFloat(String(v).replace(',', '.'));
-  return Number.isFinite(x) ? x : null;
-};
-
-// "04.08.26 18:30" — ehyd's own display format, not ISO.
-function ehydTime(s) {
-  const m = /^(\d{2})\.(\d{2})\.(\d{2}) (\d{2}):(\d{2})/.exec(String(s || ''));
-  if (!m) return null;
-  return new Date(2000 + +m[3], +m[2] - 1, +m[1], +m[4], +m[5]);
-}
-
-async function loadRivers() {
-  const results = await Promise.allSettled(
-    RIVERS.map(r => fetch(EHYD + r.hzbnr, { cache: 'no-store' })
-      .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
-      .then(d => ({ ...r, d }))));
-
-  const ok = results.filter(r => r.status === 'fulfilled').map(r => r.value);
-  if (!ok.length) return;           // panel simply stays hidden
-
-  RIVER_DATA = ok.map(({ river, en, d }) => {
-    const series = (d.data || []).map(num).filter(v => v !== null);
-    return {
-      river, en,
-      gauge: d.messstelle,
-      unit: d.einheit || 'm³/s',
-      now: num(d.wert),
-      at: ehydTime(d.zp),
-      nw: num(d.niedrigwasser),
-      mw: num(d.mittelwasser),
-      link: d.internet || null,
-      series,
-    };
-  }).filter(r => r.now !== null);
-
-  if (RIVER_DATA.length) renderRivers();
-}
 
 function riverStatus(r) {
   if (r.nw == null || r.mw == null) return '';
@@ -1561,9 +1511,12 @@ function riverStatus(r) {
 }
 
 function renderRivers() {
-  if (!RIVER_DATA) return;
+  const block = DATA && DATA.rivers;
   const sec = document.getElementById('riverSection');
+  if (!block || !block.gauges || !block.gauges.length) { sec.hidden = true; return; }
   sec.hidden = false;
+  // `at` arrives as a unix timestamp; the renderer works in Dates.
+  RIVER_DATA = block.gauges.map(g => ({ ...g, at: g.at ? new Date(g.at * 1000) : null }));
 
   const at = RIVER_DATA.map(r => r.at).filter(Boolean).sort((a, b) => b - a)[0];
   const st = document.getElementById('riverStamp');
@@ -1962,10 +1915,6 @@ fetch('data.json?' + Date.now())
     DATA = d;
     document.getElementById('app').hidden = false;
     renderAll();
-    // Independent of the main payload: if ehyd is unreachable the rest of
-    // the page is unaffected and the panel stays hidden.
-    loadRivers().catch(e => console.warn('rivers unavailable:', e));
-
     // trace.json is produced on a slower cadence than data.json and may be
     // absent on a fresh deploy, so its failure is contained too.
     fetch('trace.json?' + Date.now())

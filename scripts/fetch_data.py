@@ -454,6 +454,98 @@ def add_season(out: dict) -> None:
     }
 
 
+# River gauges, one per river, each the most downstream inside Austria.
+# `hzbnr` is eHYD's station id.
+RIVERS = [
+    (207373, "Donau", "Danube"),
+    (201889, "Inn", "Inn"),
+    (203539, "Salzach", "Salzach"),
+    (205922, "Enns", "Enns"),
+    (213595, "Drau", "Drava"),
+    (211490, "Mur", "Mur"),
+]
+EHYD = "https://ehyd.gv.at/services/Diagram/pegelBgis?hzbnr="
+# The sparkline is ~240 px wide, so more points than this buy nothing but
+# bytes. Some gauges report every 10 minutes and ship 800+ samples.
+RIVER_POINTS = 240
+
+
+def _river_num(v):
+    try:
+        return float(str(v).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _river_time(s):
+    """eHYD stamps readings '06.08.26 18:30' in Austrian local time."""
+    try:
+        naive = datetime.strptime(str(s), "%d.%m.%y %H:%M")
+    except (TypeError, ValueError):
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return int(naive.replace(tzinfo=ZoneInfo("Europe/Vienna")).timestamp())
+    except Exception:                                    # noqa: BLE001
+        # Without tz data the hour may be off; the reading is still usable.
+        return int(naive.replace(tzinfo=timezone.utc).timestamp())
+
+
+def add_rivers(out: dict) -> None:
+    """Discharge per river, fetched here rather than from the browser.
+
+    This used to be a client-side fetch, which made it the freshest panel on
+    the page. eHYD stopped sending `access-control-allow-origin`, so the
+    browser call now fails CORS and the panel silently hid itself. Fetching
+    server-side costs the freshness edge — the readings are as old as the
+    build, up to ~30 min — but they still beat the electricity data by well
+    over an hour, and it works.
+    """
+    gauges = []
+    for hzbnr, name_de, name_en in RIVERS:
+        try:
+            req = urllib.request.Request(f"{EHYD}{hzbnr}",
+                                         headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=45) as r:
+                d = json.load(r)
+        except (urllib.error.URLError, urllib.error.HTTPError,
+                json.JSONDecodeError, TimeoutError) as e:
+            print(f"WARNING: gauge {hzbnr} ({name_en}) unavailable: {e}",
+                  file=sys.stderr)
+            continue
+
+        now = _river_num(d.get("wert"))
+        if now is None:
+            continue
+
+        series = [v for v in (_river_num(x) for x in d.get("data") or [])
+                  if v is not None]
+        if len(series) > RIVER_POINTS:
+            stride = len(series) / RIVER_POINTS
+            series = [series[int(i * stride)] for i in range(RIVER_POINTS)]
+
+        gauges.append({
+            "river": name_de,
+            "en": name_en,
+            "gauge": d.get("messstelle") or "",
+            "unit": d.get("einheit") or "m³/s",
+            "now": round(now, 2),
+            "at": _river_time(d.get("zp")),
+            "nw": _river_num(d.get("niedrigwasser")),
+            "mw": _river_num(d.get("mittelwasser")),
+            "link": d.get("internet") or None,
+            "series": [round(v, 2) for v in series],
+        })
+        time.sleep(0.5)
+
+    if gauges:
+        stamps = [g["at"] for g in gauges if g["at"]]
+        out["rivers"] = {"at": max(stamps) if stamps else None, "gauges": gauges}
+        print(f"  rivers: {len(gauges)}/{len(RIVERS)} gauges")
+    else:
+        print("WARNING: no river gauges available", file=sys.stderr)
+
+
 def stamp_assets() -> None:
     """Rewrite app.js / style.css references in index.html to carry a content
     hash.
@@ -794,6 +886,8 @@ def main() -> None:
         add_season(out)
     except (KeyError, ValueError, TypeError) as e:
         print(f"WARNING: seasonal series unavailable: {e}", file=sys.stderr)
+
+    add_rivers(out)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, separators=(",", ":")) + "\n", encoding="utf-8")

@@ -14,7 +14,7 @@ from anyone else's server.
 
 ```
 GitHub Actions (every 30 min)
-  ├─ scripts/fetch_data.py    fetch + reshape + precompute
+  ├─ scripts/fetch_data.py    fetch + reshape + precompute (incl. eHYD gauges)
   │    └─ site/data.json      one blob, everything the page needs
   ├─ scripts/trace_origin.py  every 3 h, cache-gated: 32 calls
   │    └─ site/trace.json     traced origin for the Sankey
@@ -57,18 +57,28 @@ Bundesnetzagentur | SMARD.de. Both render in the page footer.
 
 River discharge comes from [eHYD](https://ehyd.gv.at/) (Hydrographie
 Österreich, CC BY 4.0), via `/services/Diagram/pegelBgis?hzbnr=<id>` — one
-gauge per river, requested **from the browser**. eHYD sends
-`access-control-allow-origin: *` and refreshes every ~15 minutes, so that
-panel is roughly two hours fresher than everything else and needs no rebuild.
-If eHYD is unreachable the panel stays hidden and the rest of the page is
-unaffected.
+gauge per river, the most downstream inside Austria.
+
+This was originally fetched **from the browser**: eHYD sent
+`access-control-allow-origin: *`, which made it the freshest panel on the page
+and needed no rebuild. **It stopped sending that header in August 2026**, so
+the browser call began failing CORS and the panel silently hid itself — the
+graceful-degradation path working as designed, which is also why the breakage
+was easy to miss. `add_rivers()` now fetches the gauges during the build
+instead. That costs the freshness edge (readings are as old as the build, up
+to ~30 min) but they still beat the electricity data by around an hour, and
+they carry their own timestamp on the panel. If eHYD is unreachable the panel
+stays hidden and the rest of the page is unaffected.
+
+Worth re-testing occasionally: if eHYD restores the CORS header, moving this
+back to the browser is a small change and buys back the freshness.
 
 ### This is not live
 
 Energy-Charts publishes settled data 2–3 hours behind the wall clock, and the
 lag is in the source rather than here. The page shows the data timestamp and
-the publication lag instead of implying it is current. The river panel is the
-exception and carries its own, much fresher timestamp.
+the publication lag instead of implying it is current. The river panel carries
+its own, somewhat fresher timestamp.
 
 ### The import mix is attribution, not tracing — and that was checked
 
