@@ -2,9 +2,11 @@ const APG_HOST = "https://transparency.apg.at";
 const SWAGGER = `${APG_HOST}/api/swagger/v1/swagger.json`;
 const TZ = "Europe/Vienna";
 const TIMEOUT_MS = 10_000;
-const CACHE_KEY: Deno.KvKey = ["apg", "latest"];
+const MANIFEST_KEY: Deno.KvKey = ["apg", "manifest"];
+const CHUNK_BYTES = 48_000;
 const KINDS = ["AGPT", "AL", "CBPF"] as const;
 type Kind = typeof KINDS[number];
+type DatasetName = "generation" | "load" | "borders";
 
 type ApgDataset = {
   ValueColumns: unknown[];
@@ -13,7 +15,7 @@ type ApgDataset = {
 };
 
 type CachedPayload = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   fetchedAt: string;
   fetchedAtEpoch: number;
   region: string | null;
@@ -21,6 +23,11 @@ type CachedPayload = {
   generation: ApgDataset;
   load: ApgDataset;
   borders: ApgDataset;
+};
+
+type CacheManifest = Omit<CachedPayload, "generation" | "load" | "borders"> & {
+  cacheId: string;
+  chunks: Record<DatasetName, number>;
 };
 
 function json(data: unknown, status = 200, cacheControl = "no-store"): Response {
@@ -120,7 +127,7 @@ async function buildCache(): Promise<CachedPayload> {
   ]);
   const fetchedAtEpoch = Math.floor(Date.now() / 1000);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fetchedAt: new Date(fetchedAtEpoch * 1000).toISOString(),
     fetchedAtEpoch,
     region: Deno.env.get("DENO_REGION") ?? null,
@@ -131,11 +138,62 @@ async function buildCache(): Promise<CachedPayload> {
   };
 }
 
+function encodeChunks(value: unknown): Uint8Array[] {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const chunks: Uint8Array[] = [];
+  for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
+    chunks.push(bytes.slice(offset, Math.min(offset + CHUNK_BYTES, bytes.length)));
+  }
+  return chunks;
+}
+
+async function writeDataset(kv: Deno.Kv, cacheId: string, name: DatasetName, value: ApgDataset): Promise<number> {
+  const chunks = encodeChunks(value);
+  for (let i = 0; i < chunks.length; i++) {
+    await kv.set(["apg", "chunk", cacheId, name, i], chunks[i]);
+  }
+  return chunks.length;
+}
+
+async function readDataset(kv: Deno.Kv, cacheId: string, name: DatasetName, count: number): Promise<ApgDataset> {
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    const entry = await kv.get<Uint8Array>(["apg", "chunk", cacheId, name, i]);
+    if (!entry.value) throw new Error(`missing cache chunk ${name}/${i}`);
+    parts.push(entry.value);
+    total += entry.value.length;
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.length;
+  }
+  return JSON.parse(new TextDecoder().decode(joined)) as ApgDataset;
+}
+
 async function refreshCache(): Promise<CachedPayload> {
   const payload = await buildCache();
+  const cacheId = `${payload.fetchedAtEpoch}-${crypto.randomUUID()}`;
   const kv = await Deno.openKv();
   try {
-    await kv.set(CACHE_KEY, payload);
+    const chunks = {
+      generation: await writeDataset(kv, cacheId, "generation", payload.generation),
+      load: await writeDataset(kv, cacheId, "load", payload.load),
+      borders: await writeDataset(kv, cacheId, "borders", payload.borders),
+    };
+    const manifest: CacheManifest = {
+      schemaVersion: 2,
+      fetchedAt: payload.fetchedAt,
+      fetchedAtEpoch: payload.fetchedAtEpoch,
+      region: payload.region,
+      window: payload.window,
+      cacheId,
+      chunks,
+    };
+    // Publish the manifest last so readers never see a partially written cache.
+    await kv.set(MANIFEST_KEY, manifest);
   } finally {
     kv.close();
   }
@@ -146,8 +204,24 @@ async function refreshCache(): Promise<CachedPayload> {
 async function readCache(): Promise<CachedPayload | null> {
   const kv = await Deno.openKv();
   try {
-    const entry = await kv.get<CachedPayload>(CACHE_KEY);
-    return entry.value;
+    const entry = await kv.get<CacheManifest>(MANIFEST_KEY);
+    const manifest = entry.value;
+    if (!manifest) return null;
+    const [generation, load, borders] = await Promise.all([
+      readDataset(kv, manifest.cacheId, "generation", manifest.chunks.generation),
+      readDataset(kv, manifest.cacheId, "load", manifest.chunks.load),
+      readDataset(kv, manifest.cacheId, "borders", manifest.chunks.borders),
+    ]);
+    return {
+      schemaVersion: 2,
+      fetchedAt: manifest.fetchedAt,
+      fetchedAtEpoch: manifest.fetchedAtEpoch,
+      region: manifest.region,
+      window: manifest.window,
+      generation,
+      load,
+      borders,
+    };
   } finally {
     kv.close();
   }
