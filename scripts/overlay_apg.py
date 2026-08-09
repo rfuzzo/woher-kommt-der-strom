@@ -24,7 +24,7 @@ APG = "https://transparency.apg.at/api/v1"
 OUT = Path(__file__).resolve().parent.parent / "site" / "data.json"
 TZ = ZoneInfo("Europe/Vienna")
 RESOLUTION = "PT15M"
-LANGUAGE = "en"
+LANGUAGE = "English"
 LOOKBACK_HOURS = 30
 
 GEN_GROUPS = {
@@ -59,7 +59,8 @@ def get_json(url: str) -> dict:
     for attempt in range(4):
         try:
             with urllib.request.urlopen(req, timeout=60) as response:
-                return json.load(response)
+                payload = json.load(response)
+            return payload.get("ResponseData", payload)
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
             last = exc
             if isinstance(exc, urllib.error.HTTPError) and exc.code < 500 and exc.code != 429:
