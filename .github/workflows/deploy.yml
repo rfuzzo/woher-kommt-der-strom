@@ -2,8 +2,8 @@ name: Build and deploy
 
 on:
   schedule:
-    # Every 30 minutes. Energy-Charts is still the production source until the
-    # APG cache/proxy path is hosted somewhere that can reach APG reliably.
+    # Every 30 minutes. Energy-Charts remains the broad fallback source; a
+    # Deno-hosted APG cache supplies fresher Austrian data when available.
     - cron: "*/30 * * * *"
   push:
     branches: [main]
@@ -32,10 +32,12 @@ jobs:
       - name: Fetch Austrian grid data
         run: python scripts/fetch_data.py
 
-      # APG access from GitHub-hosted runners currently times out before an
-      # HTTP response, including for the public Swagger JSON. Keep the APG
-      # overlay code in the repo, but do not delay every production deploy on
-      # a network path known to be unreachable. See docs/apg-proxy.md.
+      # GitHub-hosted runners cannot reach transparency.apg.at directly, but
+      # the Deno cache in Amsterdam can. The wrapper validates cache freshness
+      # and schema, then reuses overlay_apg.py's existing merge logic. Failure
+      # is non-fatal: Energy-Charts data remains untouched.
+      - name: Overlay fresher APG data from Deno cache
+        run: python scripts/run_apg_cache_overlay.py
 
       - name: Check the data actually landed
         run: |
