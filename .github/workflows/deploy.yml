@@ -33,11 +33,12 @@ jobs:
         run: python scripts/fetch_data.py
 
       # APG publishes Austrian generation, load and physical border flows
-      # sooner than the European aggregation. This is deliberately an overlay:
-      # if APG has no newer complete sample, the Energy-Charts result remains
-      # untouched and is still safe to deploy.
+      # sooner than the European aggregation. The wrapper logs DNS/connectivity,
+      # forces IPv4 for this diagnostic pass, limits the lookback to six hours,
+      # and fails back quickly to Energy-Charts if APG cannot be reached.
       - name: Overlay fresher APG data
-        run: python scripts/overlay_apg.py
+        timeout-minutes: 1
+        run: python scripts/run_apg_overlay.py
 
       - name: Check the data actually landed
         run: |
