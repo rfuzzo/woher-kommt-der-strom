@@ -2,8 +2,8 @@ name: Build and deploy
 
 on:
   schedule:
-    # Every 30 minutes. APG can publish Austrian 15-minute data materially
-    # sooner than the Energy-Charts aggregation, so this cadence is useful.
+    # Every 30 minutes. Energy-Charts is still the production source until the
+    # APG cache/proxy path is hosted somewhere that can reach APG reliably.
     - cron: "*/30 * * * *"
   push:
     branches: [main]
@@ -32,13 +32,10 @@ jobs:
       - name: Fetch Austrian grid data
         run: python scripts/fetch_data.py
 
-      # APG publishes Austrian generation, load and physical border flows
-      # sooner than the European aggregation. The wrapper logs DNS/connectivity,
-      # forces IPv4 for this diagnostic pass, limits the lookback to six hours,
-      # and fails back quickly to Energy-Charts if APG cannot be reached.
-      - name: Overlay fresher APG data
-        timeout-minutes: 1
-        run: python scripts/run_apg_overlay.py
+      # APG access from GitHub-hosted runners currently times out before an
+      # HTTP response, including for the public Swagger JSON. Keep the APG
+      # overlay code in the repo, but do not delay every production deploy on
+      # a network path known to be unreachable. See docs/apg-proxy.md.
 
       - name: Check the data actually landed
         run: |
