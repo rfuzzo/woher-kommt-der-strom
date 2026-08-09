@@ -2,8 +2,9 @@
 """Run the APG overlay with short, IPv4-only network diagnostics.
 
 This wrapper exists because GitHub-hosted runners timed out before receiving
-any HTTP response from transparency.apg.at. It keeps the normal overlay logic
-but makes connectivity failures fast and observable.
+any HTTP response from transparency.apg.at. It also enforces a live-API
+constraint that is stricter than the OpenAPI description: APG Data requests
+must use local-midnight boundaries for fromlocal/tolocal.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta
 
 import overlay_apg
 
@@ -71,6 +73,51 @@ def quick_get_json(url: str) -> dict:
     raise last if last else RuntimeError("APG request failed")
 
 
+def midnight(value: datetime) -> datetime:
+    local = value.astimezone(overlay_apg.TZ)
+    return local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def day_aligned_fetch_series(kind: str, start: datetime, end: datetime) -> dict:
+    """Fetch whole local days, then let overlay_apg select the useful tail.
+
+    The live APG Data API rejects intra-day fromlocal/tolocal values even
+    though the OpenAPI parameter description is more permissive. Both path
+    timestamps therefore stay at 00:00 local time. A six-hour lookback usually
+    costs one request per series, or two when it crosses midnight.
+    """
+    first_day = midnight(start)
+    last_boundary = midnight(end)
+    if end > last_boundary:
+        last_boundary += timedelta(days=1)
+
+    rows: list[dict] = []
+    columns: list[dict] | None = None
+    versions: list[str] = []
+    cursor = first_day
+    while cursor < last_boundary:
+        next_day = cursor + timedelta(days=1)
+        url = (f"{overlay_apg.APG}/{kind}/Data/{overlay_apg.LANGUAGE}/"
+               f"{overlay_apg.RESOLUTION}/{overlay_apg.local_arg(cursor)}/"
+               f"{overlay_apg.local_arg(next_day)}")
+        payload = overlay_apg.get_json(url)
+        cols = payload.get("ValueColumns") or []
+        if columns is None:
+            columns = cols
+        elif [c.get("InternalName") for c in columns] != [c.get("InternalName") for c in cols]:
+            raise ValueError(f"APG {kind} columns changed across days")
+        rows.extend(payload.get("ValueRows") or [])
+        if payload.get("VersionInformation"):
+            versions.append(str(payload["VersionInformation"]))
+        cursor = next_day
+
+    return {
+        "ValueColumns": columns or [],
+        "ValueRows": rows,
+        "VersionInformation": versions[-1] if versions else None,
+    }
+
+
 def main() -> None:
     describe_dns()
 
@@ -86,10 +133,12 @@ def main() -> None:
               file=sys.stderr)
         return
 
-    # Six hours comfortably bridges the observed 2-4 h Energy-Charts lag while
-    # reducing APG payload size and request count versus the original 30 h.
+    # Six hours comfortably bridges the observed 2-4 h Energy-Charts lag. APG
+    # itself receives whole-day requests; this lookback only controls which
+    # local calendar day(s) we need to fetch.
     overlay_apg.LOOKBACK_HOURS = 6
     overlay_apg.get_json = quick_get_json
+    overlay_apg.fetch_series = day_aligned_fetch_series
     overlay_apg.main()
 
 
