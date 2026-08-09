@@ -2,8 +2,8 @@ name: Build and deploy
 
 on:
   schedule:
-    # Every 30 minutes. Energy-Charts publishes settled data roughly 1-3 h
-    # behind real time, so refreshing faster buys nothing.
+    # Every 30 minutes. APG can publish Austrian 15-minute data materially
+    # sooner than the Energy-Charts aggregation, so this cadence is useful.
     - cron: "*/30 * * * *"
   push:
     branches: [main]
@@ -31,6 +31,13 @@ jobs:
 
       - name: Fetch Austrian grid data
         run: python scripts/fetch_data.py
+
+      # APG publishes Austrian generation, load and physical border flows
+      # sooner than the European aggregation. This is deliberately an overlay:
+      # if APG has no newer complete sample, the Energy-Charts result remains
+      # untouched and is still safe to deploy.
+      - name: Overlay fresher APG data
+        run: python scripts/overlay_apg.py
 
       - name: Check the data actually landed
         run: |
