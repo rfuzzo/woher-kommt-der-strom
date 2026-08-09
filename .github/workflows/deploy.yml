@@ -39,6 +39,12 @@ jobs:
       - name: Overlay fresher APG data from Deno cache
         run: python scripts/run_apg_cache_overlay.py
 
+      # Diagnostic only: report which APG feed currently limits the common
+      # timestamp used by the dashboard. Never block a deploy on diagnostics.
+      - name: Report APG feed freshness
+        continue-on-error: true
+        run: python scripts/inspect_apg_cache.py
+
       - name: Check the data actually landed
         run: |
           python - <<'PY'
