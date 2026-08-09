@@ -24,6 +24,7 @@ CACHE_URL = os.environ.get(
 )
 MAX_CACHE_AGE_SECONDS = 60 * 60
 TIMEOUT_SECONDS = 12
+SUPPORTED_SCHEMAS = {1, 2}
 
 
 def fetch_cache() -> dict:
@@ -39,8 +40,9 @@ def fetch_cache() -> dict:
             raise RuntimeError(f"cache returned HTTP {response.status}")
         payload = json.load(response)
 
-    if payload.get("schemaVersion") != 1:
-        raise ValueError(f"unsupported APG cache schema: {payload.get('schemaVersion')!r}")
+    schema = payload.get("schemaVersion")
+    if schema not in SUPPORTED_SCHEMAS:
+        raise ValueError(f"unsupported APG cache schema: {schema!r}")
 
     fetched_at = payload.get("fetchedAtEpoch")
     if not isinstance(fetched_at, (int, float)):
@@ -59,7 +61,7 @@ def fetch_cache() -> dict:
             raise ValueError(f"APG cache {name} is empty")
 
     print(
-        f"APG cache: {age // 60} min old, region={payload.get('region')}, "
+        f"APG cache: schema={schema}, {age // 60} min old, region={payload.get('region')}, "
         f"rows generation/load/borders="
         f"{len(payload['generation']['ValueRows'])}/"
         f"{len(payload['load']['ValueRows'])}/"
