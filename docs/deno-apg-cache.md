@@ -10,7 +10,7 @@ The Deno Deploy app at `woher-kommt-der-strom.rfuzzo.deno.net` is used as a smal
 - requests calendar-day windows because the live APG API requires `fromlocal` and `tolocal` at local midnight;
 - fetches yesterday and today so the cache remains useful around midnight and while Energy-Charts is several hours behind;
 - allows each APG request 30 seconds and retries once before abandoning a refresh;
-- is refreshed every 15 minutes by `.github/workflows/apg-cache.yml`, which calls the production HTTP endpoint externally;
+- is refreshed through the public production endpoint by a Europe-origin scheduler;
 - stores only the latest successful combined payload in Deno KV;
 - leaves the previous value intact when any APG request fails.
 
@@ -45,4 +45,11 @@ GitHub integration should independently reject an empty or excessively stale cac
 The scheduler deliberately runs outside Deno. APG requests from Deno cron's
 execution context repeatedly timed out, while requests handled by the Amsterdam
 production HTTP timeline completed normally. A deployment cannot call itself
-as a workaround because Deno rejects that recursion with HTTP 508.
+as a workaround because Deno rejects that recursion with HTTP 508. Standard
+GitHub-hosted runners are not suitable either: the observed runner was in East
+US and Deno routed its request through the same failing path.
+
+A free setup is a 15-minute GET job at [cron-job.org](https://cron-job.org/)
+targeting `https://woher-kommt-der-strom.rfuzzo.deno.net/apg/refresh`. Test the
+job once and verify that it returns HTTP 200 with `"ok": true` before enabling
+the schedule.
