@@ -74,6 +74,11 @@ def decay(seconds: int) -> float:
     return math.exp(-math.log(2) * max(seconds, 0) / HALF_LIFE_SECONDS)
 
 
+def rounded_model(groups: dict[str, float]) -> dict:
+    rounded = {key: round(value, 1) for key, value in groups.items()}
+    return {"generationMw": round(sum(rounded.values()), 1), "groups": rounded}
+
+
 def build_nowcast(cached: dict) -> dict:
     if cached.get("schemaVersion") != 3:
         raise ValueError("generation forecast requires APG cache schema 3")
@@ -95,7 +100,7 @@ def build_nowcast(cached: dict) -> dict:
     if anchor is None:
         raise ValueError("no complete official APG generation row")
 
-    anchor_at, actual_row, groups = anchor
+    anchor_at, actual_row, anchor_groups = anchor
     anchor_forecast = latest_at_or_before(forecast, anchor_at, max_gap=60 * 60)
     if anchor_forecast is None:
         raise ValueError("no APG generation forecast near latest official generation row")
@@ -115,38 +120,43 @@ def build_nowcast(cached: dict) -> dict:
         raise ValueError(f"official generation anchor is too old for nowcast ({horizon // 60} min)")
     weight = decay(horizon)
 
-    # Wind: bias-correct the current forecast with the latest actual error.
+    persistence_groups = dict(anchor_groups)
+    raw_groups = dict(anchor_groups)
+    corrected_groups = dict(anchor_groups)
+
     wind_anchor_fc = forecast_value(forecast_anchor_row, "DAFWG")
     wind_target_fc = forecast_value(forecast_target_row, "DAFWG")
     if wind_anchor_fc is None or wind_target_fc is None:
         raise ValueError("APG forecast is missing wind")
-    wind_bias = groups["wind"] - wind_anchor_fc
-    groups["wind"] = max(0.0, wind_target_fc + wind_bias * weight)
+    wind_bias = anchor_groups["wind"] - wind_anchor_fc
+    raw_groups["wind"] = max(0.0, wind_target_fc)
+    corrected_groups["wind"] = max(0.0, wind_target_fc + wind_bias * weight)
 
-    # Solar: use feed-in forecast when available so it matches APG's actual
-    # public-grid feed-in semantics. Shrink the calibration back toward 1.0 as
-    # the forecast horizon grows. Near zero production, additive correction is
-    # more stable than a ratio.
     solar_anchor_fc = forecast_value(
         forecast_anchor_row, "DAFSGFeedIn", "DAFSG", "DAFSGTotal")
     solar_target_fc = forecast_value(
         forecast_target_row, "DAFSGFeedIn", "DAFSG", "DAFSGTotal")
     if solar_anchor_fc is None or solar_target_fc is None:
         raise ValueError("APG forecast is missing solar")
+    raw_groups["solar"] = max(0.0, solar_target_fc)
     if solar_anchor_fc >= 25:
-        ratio = max(0.5, min(1.5, groups["solar"] / solar_anchor_fc))
+        ratio = max(0.5, min(1.5, anchor_groups["solar"] / solar_anchor_fc))
         corrected_ratio = 1.0 + (ratio - 1.0) * weight
-        groups["solar"] = max(0.0, solar_target_fc * corrected_ratio)
+        corrected_groups["solar"] = max(0.0, solar_target_fc * corrected_ratio)
         solar_correction = {"mode": "ratio", "anchorRatio": round(ratio, 4)}
     else:
-        solar_bias = groups["solar"] - solar_anchor_fc
-        groups["solar"] = max(0.0, solar_target_fc + solar_bias * weight)
+        solar_bias = anchor_groups["solar"] - solar_anchor_fc
+        corrected_groups["solar"] = max(0.0, solar_target_fc + solar_bias * weight)
         solar_correction = {"mode": "additive", "anchorBiasMw": round(solar_bias, 1)}
 
-    rounded = {key: round(value, 1) for key, value in groups.items()}
-    total = round(sum(rounded.values()), 1)
+    models = {
+        "persistence": rounded_model(persistence_groups),
+        "rawForecast": rounded_model(raw_groups),
+        "corrected": rounded_model(corrected_groups),
+    }
+    corrected = models["corrected"]
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "experimental": True,
         "model": "apg-forecast-bias-v0",
         "generatedAt": now_epoch,
@@ -155,8 +165,9 @@ def build_nowcast(cached: dict) -> dict:
         "targetAt": target_at,
         "horizonMinutes": horizon // 60,
         "correctionWeight": round(weight, 4),
-        "generationMw": total,
-        "groups": rounded,
+        "generationMw": corrected["generationMw"],
+        "groups": corrected["groups"],
+        "models": models,
         "diagnostics": {
             "wind": {
                 "actualAnchorMw": round(float(actual_row["B19"]), 1),
@@ -165,7 +176,7 @@ def build_nowcast(cached: dict) -> dict:
                 "anchorBiasMw": round(wind_bias, 1),
             },
             "solar": {
-                "actualAnchorMw": round(groups["solar"] if target_at == anchor_at else actual_groups(actual_row)["solar"], 1),
+                "actualAnchorMw": round(anchor_groups["solar"], 1),
                 "forecastAnchorMw": round(solar_anchor_fc, 1),
                 "forecastTargetMw": round(solar_target_fc, 1),
                 **solar_correction,
@@ -173,6 +184,7 @@ def build_nowcast(cached: dict) -> dict:
         },
         "notes": [
             "Wind and solar are model estimates; other generation groups use persistence from the latest official APG row.",
+            "Persistence and raw-forecast baselines are included for point-in-time backtesting.",
             "This file is experimental and is not used as the site's official current generation value.",
         ],
     }

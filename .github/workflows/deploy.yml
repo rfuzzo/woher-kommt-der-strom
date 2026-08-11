@@ -52,6 +52,15 @@ jobs:
         continue-on-error: true
         run: python scripts/build_generation_nowcast.py
 
+      # Restore the previously deployed pending predictions, add the current
+      # target once, and score older targets whenever APG actuals have arrived.
+      # The resulting history is deployed with the site and becomes the input
+      # for the next build, so no mutable GitHub cache or repository commits are
+      # needed for experimental backtesting.
+      - name: Update generation nowcast backtest
+        continue-on-error: true
+        run: python scripts/update_nowcast_history.py
+
       - name: Check the data actually landed
         run: |
           python - <<'PY'
