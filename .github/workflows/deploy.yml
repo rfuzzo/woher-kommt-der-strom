@@ -45,6 +45,13 @@ jobs:
         continue-on-error: true
         run: python scripts/inspect_apg_cache.py
 
+      # Experimental only. The nowcast is written to site/nowcast.json but the
+      # frontend does not consume it yet. This lets us compare the estimate
+      # against delayed official APG values before deciding whether to show it.
+      - name: Build experimental generation nowcast
+        continue-on-error: true
+        run: python scripts/build_generation_nowcast.py
+
       - name: Check the data actually landed
         run: |
           python - <<'PY'
