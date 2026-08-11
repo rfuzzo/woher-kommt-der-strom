@@ -1,7 +1,9 @@
 const APG_HOST = "https://transparency.apg.at";
 const SWAGGER = `${APG_HOST}/api/swagger/v1/swagger.json`;
 const TZ = "Europe/Vienna";
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 30_000;
+const FETCH_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 1_000;
 const MANIFEST_KEY: Deno.KvKey = ["apg", "manifest"];
 const CHUNK_BYTES = 48_000;
 const KINDS = ["AGPT", "AL", "CBPF"] as const;
@@ -71,18 +73,29 @@ function cacheWindow(now = new Date()): { yesterday: string; today: string; tomo
 }
 
 async function fetchJson(url: string): Promise<unknown> {
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent": "woher-kommt-der-strom-deno-cache/1.0",
-    },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`APG HTTP ${response.status}: ${body.slice(0, 300)}`);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "user-agent": "woher-kommt-der-strom-deno-cache/1.0",
+        },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`APG HTTP ${response.status}: ${body.slice(0, 300)}`);
+      }
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt === FETCH_ATTEMPTS) break;
+      console.warn(`APG fetch attempt ${attempt} failed; retrying: ${String(error)}`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
   }
-  return await response.json();
+  throw lastError;
 }
 
 function unwrap(payload: unknown): ApgDataset {
