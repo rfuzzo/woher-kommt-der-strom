@@ -1,7 +1,9 @@
 const APG_HOST = "https://transparency.apg.at";
 const SWAGGER = `${APG_HOST}/api/swagger/v1/swagger.json`;
+const PRODUCTION_REFRESH_URL = "https://woher-kommt-der-strom.rfuzzo.deno.net/apg/refresh";
 const TZ = "Europe/Vienna";
 const TIMEOUT_MS = 30_000;
+const CRON_TIMEOUT_MS = 90_000;
 const FETCH_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 1_000;
 const MANIFEST_KEY: Deno.KvKey = ["apg", "manifest"];
@@ -240,12 +242,29 @@ async function readCache(): Promise<CachedPayload | null> {
   }
 }
 
+async function refreshThroughProduction(): Promise<void> {
+  const response = await fetch(PRODUCTION_REFRESH_URL, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "woher-kommt-der-strom-deno-cron/1.0",
+    },
+    signal: AbortSignal.timeout(CRON_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`production refresh HTTP ${response.status}: ${body.slice(0, 300)}`);
+  }
+}
+
 Deno.cron(
   "Refresh APG cache",
   "*/15 * * * *",
   { backoffSchedule: [5_000, 30_000] },
   async () => {
-    await refreshCache();
+    // Cron executions use a different outbound path than production HTTP
+    // requests. APG repeatedly timed out from the cron context while the same
+    // refresh completed quickly through the Amsterdam production timeline.
+    await refreshThroughProduction();
   },
 );
 

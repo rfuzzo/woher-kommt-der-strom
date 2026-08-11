@@ -10,7 +10,7 @@ The Deno Deploy app at `woher-kommt-der-strom.rfuzzo.deno.net` is used as a smal
 - requests calendar-day windows because the live APG API requires `fromlocal` and `tolocal` at local midnight;
 - fetches yesterday and today so the cache remains useful around midnight and while Energy-Charts is several hours behind;
 - allows each APG request 30 seconds and retries once before abandoning a refresh;
-- refreshes every 15 minutes with `Deno.cron()`;
+- refreshes every 15 minutes with `Deno.cron()`; the cron calls the public production refresh endpoint because APG requests from Deno's cron execution context time out while production HTTP requests from Amsterdam succeed;
 - stores only the latest successful combined payload in Deno KV;
 - leaves the previous value intact when any APG request fails.
 
