@@ -24,7 +24,7 @@ CACHE_URL = os.environ.get(
 )
 MAX_CACHE_AGE_SECONDS = 60 * 60
 TIMEOUT_SECONDS = 12
-SUPPORTED_SCHEMAS = {1, 2}
+SUPPORTED_SCHEMAS = {1, 2, 3}
 
 
 def fetch_cache() -> dict:
