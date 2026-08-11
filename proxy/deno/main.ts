@@ -6,9 +6,9 @@ const FETCH_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 1_000;
 const MANIFEST_KEY: Deno.KvKey = ["apg", "manifest"];
 const CHUNK_BYTES = 48_000;
-const KINDS = ["AGPT", "AL", "CBPF"] as const;
+const KINDS = ["AGPT", "AL", "CBPF", "DAFTG"] as const;
 type Kind = typeof KINDS[number];
-type DatasetName = "generation" | "load" | "borders";
+type DatasetName = "generation" | "load" | "borders" | "generationForecast";
 
 type ApgDataset = {
   ValueColumns: unknown[];
@@ -17,7 +17,7 @@ type ApgDataset = {
 };
 
 type CachedPayload = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   fetchedAt: string;
   fetchedAtEpoch: number;
   region: string | null;
@@ -25,9 +25,10 @@ type CachedPayload = {
   generation: ApgDataset;
   load: ApgDataset;
   borders: ApgDataset;
+  generationForecast: ApgDataset;
 };
 
-type CacheManifest = Omit<CachedPayload, "generation" | "load" | "borders"> & {
+type CacheManifest = Omit<CachedPayload, "generation" | "load" | "borders" | "generationForecast"> & {
   cacheId: string;
   chunks: Record<DatasetName, number>;
 };
@@ -133,14 +134,15 @@ async function fetchKind(kind: Kind, yesterday: string, today: string, tomorrow:
 
 async function buildCache(): Promise<CachedPayload> {
   const { yesterday, today, tomorrow } = cacheWindow();
-  const [generation, load, borders] = await Promise.all([
+  const [generation, load, borders, generationForecast] = await Promise.all([
     fetchKind("AGPT", yesterday, today, tomorrow),
     fetchKind("AL", yesterday, today, tomorrow),
     fetchKind("CBPF", yesterday, today, tomorrow),
+    fetchKind("DAFTG", yesterday, today, tomorrow),
   ]);
   const fetchedAtEpoch = Math.floor(Date.now() / 1000);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     fetchedAt: new Date(fetchedAtEpoch * 1000).toISOString(),
     fetchedAtEpoch,
     region: Deno.env.get("DENO_REGION") ?? null,
@@ -148,6 +150,7 @@ async function buildCache(): Promise<CachedPayload> {
     generation,
     load,
     borders,
+    generationForecast,
   };
 }
 
@@ -195,9 +198,10 @@ async function refreshCache(): Promise<CachedPayload> {
       generation: await writeDataset(kv, cacheId, "generation", payload.generation),
       load: await writeDataset(kv, cacheId, "load", payload.load),
       borders: await writeDataset(kv, cacheId, "borders", payload.borders),
+      generationForecast: await writeDataset(kv, cacheId, "generationForecast", payload.generationForecast),
     };
     const manifest: CacheManifest = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       fetchedAt: payload.fetchedAt,
       fetchedAtEpoch: payload.fetchedAtEpoch,
       region: payload.region,
@@ -219,14 +223,15 @@ async function readCache(): Promise<CachedPayload | null> {
   try {
     const entry = await kv.get<CacheManifest>(MANIFEST_KEY);
     const manifest = entry.value;
-    if (!manifest) return null;
-    const [generation, load, borders] = await Promise.all([
+    if (!manifest || manifest.schemaVersion !== 3 || !manifest.chunks.generationForecast) return null;
+    const [generation, load, borders, generationForecast] = await Promise.all([
       readDataset(kv, manifest.cacheId, "generation", manifest.chunks.generation),
       readDataset(kv, manifest.cacheId, "load", manifest.chunks.load),
       readDataset(kv, manifest.cacheId, "borders", manifest.chunks.borders),
+      readDataset(kv, manifest.cacheId, "generationForecast", manifest.chunks.generationForecast),
     ]);
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       fetchedAt: manifest.fetchedAt,
       fetchedAtEpoch: manifest.fetchedAtEpoch,
       region: manifest.region,
@@ -234,6 +239,7 @@ async function readCache(): Promise<CachedPayload | null> {
       generation,
       load,
       borders,
+      generationForecast,
     };
   } finally {
     kv.close();
@@ -271,7 +277,7 @@ Deno.serve(async (request) => {
     try {
       const cached = await readCache();
       if (!cached) {
-        return json({ ok: false, error: "cache is empty; call /apg/refresh once or wait for cron" }, 503);
+        return json({ ok: false, error: "cache is empty or still schema v2; call /apg/refresh once after deploying schema v3" }, 503);
       }
       const ageSeconds = Math.max(0, Math.floor(Date.now() / 1000) - cached.fetchedAtEpoch);
       return json({ ...cached, ageSeconds }, 200, "public, max-age=60");
@@ -291,6 +297,7 @@ Deno.serve(async (request) => {
           generation: payload.generation.ValueRows.length,
           load: payload.load.ValueRows.length,
           borders: payload.borders.ValueRows.length,
+          generationForecast: payload.generationForecast.ValueRows.length,
         },
       });
     } catch (error) {
