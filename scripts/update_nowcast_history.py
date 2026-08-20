@@ -25,7 +25,7 @@ HISTORY_URL = os.environ.get(
     "https://rfuzzo.github.io/woher-kommt-der-strom/nowcast-history.json",
 )
 MAX_PREDICTIONS = 14 * 24 * 4
-MODELS = ("persistence", "rawForecast", "corrected")
+MODELS = ("persistence", "rawForecast", "corrected", "totalTrend")
 METRICS = ("generationMw", "wind", "solar")
 
 
@@ -34,7 +34,12 @@ def empty_history() -> dict:
         "schemaVersion": 1,
         "updatedAt": 0,
         "predictions": [],
-        "summary": {"scoredCount": 0, "pendingCount": 0, "mae": {}},
+        "summary": {
+            "scoredCount": 0,
+            "pendingCount": 0,
+            "modelScoredCount": {},
+            "mae": {},
+        },
     }
 
 
@@ -68,7 +73,10 @@ def prediction_from_nowcast(nowcast: dict) -> dict:
         "generatedAt": int(nowcast["generatedAt"]),
         "anchorAt": int(nowcast["anchorAt"]),
         "horizonMinutes": int(nowcast["horizonMinutes"]),
-        "models": {name: compact_model(nowcast["models"][name]) for name in MODELS},
+        "models": {
+            name: compact_model(nowcast["models"][name])
+            for name in MODELS if name in nowcast["models"]
+        },
     }
 
 
@@ -93,6 +101,8 @@ def score_pending(history: dict, cached: dict) -> int:
         }
         errors = {}
         for model_name in MODELS:
+            if model_name not in prediction["models"]:
+                continue
             model = prediction["models"][model_name]
             errors[model_name] = {
                 metric: round(float(model[metric]) - actual[metric], 1)
@@ -111,10 +121,18 @@ def summarize(history: dict) -> dict:
     mae: dict[str, dict[str, float | None]] = {}
     rmse: dict[str, dict[str, float | None]] = {}
     bias: dict[str, dict[str, float | None]] = {}
+    model_scored_count: dict[str, int] = {}
     for model_name in MODELS:
         mae[model_name], rmse[model_name], bias[model_name] = {}, {}, {}
+        model_scored_count[model_name] = sum(
+            model_name in p.get("errors", {}) for p in scored
+        )
         for metric in METRICS:
-            values = [float(p["errors"][model_name][metric]) for p in scored]
+            values = [
+                float(p["errors"][model_name][metric])
+                for p in scored
+                if metric in p.get("errors", {}).get(model_name, {})
+            ]
             if values:
                 mae[model_name][metric] = round(sum(abs(v) for v in values) / len(values), 1)
                 rmse[model_name][metric] = round(math.sqrt(sum(v * v for v in values) / len(values)), 1)
@@ -126,6 +144,7 @@ def summarize(history: dict) -> dict:
     return {
         "scoredCount": len(scored),
         "pendingCount": pending,
+        "modelScoredCount": model_scored_count,
         "mae": mae,
         "rmse": rmse,
         "bias": bias,

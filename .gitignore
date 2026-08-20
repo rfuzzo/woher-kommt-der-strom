@@ -1,6 +1,8 @@
 # Rebuilt by CI on every run; never committed.
 site/data.json
 site/trace.json
+site/nowcast.json
+site/nowcast-history.json
 
 .DS_Store
 __pycache__/

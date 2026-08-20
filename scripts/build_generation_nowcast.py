@@ -11,6 +11,12 @@ v0 model:
 - solar feed-in follows APG's solar feed-in forecast, calibrated by the latest
   actual/forecast ratio (bounded to avoid wild corrections);
 - all other generation groups use persistence from the latest official row.
+
+An additional totalTrend candidate uses only the change in APG's total
+generation forecast.  Its forecast level has a large systematic offset from
+the generation-per-type total, but its short-term direction can still be
+useful.  Keeping it as a separate model lets point-in-time backtesting decide
+whether it should replace v0.
 """
 
 from __future__ import annotations
@@ -77,6 +83,25 @@ def decay(seconds: int) -> float:
 def rounded_model(groups: dict[str, float]) -> dict:
     rounded = {key: round(value, 1) for key, value in groups.items()}
     return {"generationMw": round(sum(rounded.values()), 1), "groups": rounded}
+
+
+def reconcile_total(groups: dict[str, float], target_total: float) -> dict[str, float]:
+    """Scale non-wind/solar groups so the mix reaches target_total.
+
+    Wind and solar retain their independently corrected values.  The remaining
+    groups keep the anchor mix rather than attributing the forecast movement to
+    one technology without evidence.
+    """
+    result = dict(groups)
+    fixed = result["wind"] + result["solar"]
+    flexible = tuple(key for key in result if key not in {"wind", "solar"})
+    current_flexible = sum(result[key] for key in flexible)
+    target_flexible = max(0.0, target_total - fixed)
+    if current_flexible > 0:
+        scale = target_flexible / current_flexible
+        for key in flexible:
+            result[key] = max(0.0, result[key] * scale)
+    return result
 
 
 def build_nowcast(cached: dict) -> dict:
@@ -149,10 +174,21 @@ def build_nowcast(cached: dict) -> dict:
         corrected_groups["solar"] = max(0.0, solar_target_fc + solar_bias * weight)
         solar_correction = {"mode": "additive", "anchorBiasMw": round(solar_bias, 1)}
 
+    total_anchor_fc = forecast_value(forecast_anchor_row, "DAFTG")
+    total_target_fc = forecast_value(forecast_target_row, "DAFTG")
+    if total_anchor_fc is None or total_target_fc is None:
+        raise ValueError("APG forecast is missing total generation")
+    anchor_total = sum(anchor_groups.values())
+    forecast_change = total_target_fc - total_anchor_fc
+    variable_target = corrected_groups["wind"] + corrected_groups["solar"]
+    total_trend_target = max(variable_target, anchor_total + forecast_change)
+    total_trend_groups = reconcile_total(corrected_groups, total_trend_target)
+
     models = {
         "persistence": rounded_model(persistence_groups),
         "rawForecast": rounded_model(raw_groups),
         "corrected": rounded_model(corrected_groups),
+        "totalTrend": rounded_model(total_trend_groups),
     }
     corrected = models["corrected"]
     return {
@@ -169,6 +205,13 @@ def build_nowcast(cached: dict) -> dict:
         "groups": corrected["groups"],
         "models": models,
         "diagnostics": {
+            "total": {
+                "actualAnchorMw": round(anchor_total, 1),
+                "forecastAnchorMw": round(total_anchor_fc, 1),
+                "forecastTargetMw": round(total_target_fc, 1),
+                "forecastChangeMw": round(forecast_change, 1),
+                "targetMw": round(total_trend_target, 1),
+            },
             "wind": {
                 "actualAnchorMw": round(float(actual_row["B19"]), 1),
                 "forecastAnchorMw": round(wind_anchor_fc, 1),
@@ -185,6 +228,7 @@ def build_nowcast(cached: dict) -> dict:
         "notes": [
             "Wind and solar are model estimates; other generation groups use persistence from the latest official APG row.",
             "Persistence and raw-forecast baselines are included for point-in-time backtesting.",
+            "The total-trend candidate follows changes in APG's total forecast while preserving the corrected wind and solar estimates.",
             "This file is experimental and is not used as the site's official current generation value.",
         ],
     }
