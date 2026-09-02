@@ -37,7 +37,8 @@ hand-rolled SVG in `site/app.js`.
 
 The site uses two public sources:
 
-- **Austrian Power Grid (APG) Transparency API** for the freshest Austrian
+- **Austrian Power Grid (APG) Transparency API**, cached on a Netcup VPS with
+  Deno as a fallback, for the freshest Austrian
   generation by type, actual load and physical cross-border flows;
 - **Energy-Charts v2 API** (Fraunhofer ISE) for neighbour generation, prices,
   European tracing inputs, seasonal context and as the automatic fallback.

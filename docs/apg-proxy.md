@@ -48,8 +48,8 @@ The production VPS files live in `proxy/vps/`:
   `https://strom-api.rfuzzo.de/apg/latest.json` with automatic HTTPS.
 
 APG or network failures leave the previous successful JSON file untouched.
-The Deno endpoint remains the fallback until the VPS has run successfully for
-several days.
+Consumers try the VPS endpoint first and automatically use the Deno endpoint
+when the VPS result is unavailable, invalid, or more than one hour old.
 
 ## Cache payload
 

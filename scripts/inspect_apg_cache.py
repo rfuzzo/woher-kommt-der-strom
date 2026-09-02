@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report per-feed freshness from the Deno APG cache.
+"""Report per-feed freshness from the preferred available APG cache.
 
 This is diagnostic only: it never mutates site/data.json and never fails a deploy.
 It shows which APG feed currently limits the common timestamp used by the overlay.
@@ -7,16 +7,11 @@ It shows which APG feed currently limits the common timestamp used by the overla
 
 from __future__ import annotations
 
-import json
-import os
-import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-CACHE_URL = os.environ.get(
-    "APG_CACHE_URL",
-    "https://woher-kommt-der-strom.rfuzzo.deno.net/apg/latest.json",
-)
+from run_apg_cache_overlay import fetch_cache
+
 TZ = ZoneInfo("Europe/Vienna")
 
 GEN_REQUIRED = {
@@ -27,12 +22,7 @@ BORDER_REQUIRED = {"Sum", "CZtoAT", "DEtoAT", "HUtoAT", "ITtoAT", "SItoAT", "CHt
 
 
 def fetch() -> dict:
-    req = urllib.request.Request(CACHE_URL, headers={
-        "Accept": "application/json",
-        "User-Agent": "woher-kommt-der-strom-diagnostics/1.0",
-    })
-    with urllib.request.urlopen(req, timeout=12) as response:
-        return json.load(response)
+    return fetch_cache()
 
 
 def row_stamp(row: dict) -> int | None:

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Overlay fresher APG data fetched from the Deno cache onto site/data.json.
+"""Overlay fresher APG data fetched from a validated cache onto site/data.json.
 
 Energy-Charts remains the production fallback. This wrapper downloads one
-validated cache payload from Deno, checks schema/freshness, then reuses the
-existing overlay_apg parsing and merge logic without making any direct APG
-requests from GitHub-hosted runners.
+validated cache payload, checks schema/freshness, then reuses the existing
+overlay_apg parsing and merge logic without making any direct APG requests
+from GitHub-hosted runners. The Netcup VPS is primary and Deno is retained as
+an independent fallback during the migration.
 """
 
 from __future__ import annotations
@@ -18,18 +19,28 @@ from datetime import datetime, timezone
 
 import overlay_apg
 
-CACHE_URL = os.environ.get(
-    "APG_CACHE_URL",
+DEFAULT_CACHE_URLS = (
+    "https://strom-api.rfuzzo.de/apg/latest.json",
     "https://woher-kommt-der-strom.rfuzzo.deno.net/apg/latest.json",
 )
 MAX_CACHE_AGE_SECONDS = 60 * 60
 TIMEOUT_SECONDS = 12
-SUPPORTED_SCHEMAS = {1, 2, 3}
+SUPPORTED_SCHEMAS = {3}
 
 
-def fetch_cache() -> dict:
+def cache_urls() -> tuple[str, ...]:
+    configured = os.environ.get("APG_CACHE_URLS")
+    if configured:
+        urls = tuple(url.strip() for url in configured.split(",") if url.strip())
+        if urls:
+            return urls
+    legacy = os.environ.get("APG_CACHE_URL")
+    return (legacy,) if legacy else DEFAULT_CACHE_URLS
+
+
+def fetch_one(url: str) -> dict:
     req = urllib.request.Request(
-        CACHE_URL,
+        url,
         headers={
             "Accept": "application/json",
             "User-Agent": "woher-kommt-der-strom-github/1.0",
@@ -53,21 +64,40 @@ def fetch_cache() -> dict:
     if age > MAX_CACHE_AGE_SECONDS:
         raise ValueError(f"APG cache is stale ({age // 60} min old)")
 
-    for name in ("generation", "load", "borders"):
+    for name in ("generation", "load", "borders", "generationForecast"):
         dataset = payload.get(name)
         if not isinstance(dataset, dict):
             raise ValueError(f"APG cache missing {name}")
         if not dataset.get("ValueColumns") or not dataset.get("ValueRows"):
             raise ValueError(f"APG cache {name} is empty")
 
-    print(
-        f"APG cache: schema={schema}, {age // 60} min old, region={payload.get('region')}, "
-        f"rows generation/load/borders="
-        f"{len(payload['generation']['ValueRows'])}/"
-        f"{len(payload['load']['ValueRows'])}/"
-        f"{len(payload['borders']['ValueRows'])}"
-    )
     return payload
+
+
+def fetch_cache() -> dict:
+    errors = []
+    for url in cache_urls():
+        try:
+            payload = fetch_one(url)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+                RuntimeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            errors.append(f"{url}: {exc}")
+            print(f"WARNING: APG cache failed at {url}: {exc}", file=sys.stderr)
+            continue
+
+        age = int(datetime.now(timezone.utc).timestamp() - payload["fetchedAtEpoch"])
+        print(
+            f"APG cache: source={url}, schema={payload['schemaVersion']}, "
+            f"{age // 60} min old, region={payload.get('region')}, "
+            f"rows generation/load/borders/forecast="
+            f"{len(payload['generation']['ValueRows'])}/"
+            f"{len(payload['load']['ValueRows'])}/"
+            f"{len(payload['borders']['ValueRows'])}/"
+            f"{len(payload['generationForecast']['ValueRows'])}"
+        )
+        return payload
+
+    raise RuntimeError("all APG cache endpoints failed: " + "; ".join(errors))
 
 
 def main() -> None:

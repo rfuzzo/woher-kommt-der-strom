@@ -2,8 +2,8 @@ name: Build and deploy
 
 on:
   schedule:
-    # Every 30 minutes. Energy-Charts remains the broad fallback source; a
-    # Deno-hosted APG cache supplies fresher Austrian data when available.
+    # Every 30 minutes. Energy-Charts remains the broad fallback source; the
+    # VPS-hosted APG cache supplies fresher Austrian data when available.
     - cron: "*/30 * * * *"
   push:
     branches: [main]
@@ -35,11 +35,11 @@ jobs:
       - name: Fetch Austrian grid data
         run: python scripts/fetch_data.py
 
-      # GitHub-hosted runners cannot reach transparency.apg.at directly, but
-      # the Deno cache in Amsterdam can. The wrapper validates cache freshness
-      # and schema, then reuses overlay_apg.py's existing merge logic. Failure
-      # is non-fatal: Energy-Charts data remains untouched.
-      - name: Overlay fresher APG data from Deno cache
+      # GitHub-hosted runners cannot reach transparency.apg.at directly. The
+      # wrapper uses the Netcup VPS cache first and Deno as a migration fallback,
+      # validating freshness and schema before reusing the existing merge logic.
+      # Failure is non-fatal: Energy-Charts data remains untouched.
+      - name: Overlay fresher APG data from cache
         run: python scripts/run_apg_cache_overlay.py
 
       # Diagnostic only: report which APG feed currently limits the common
