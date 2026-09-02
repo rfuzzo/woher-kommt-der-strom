@@ -44,6 +44,14 @@ def empty_history() -> dict:
 
 
 def load_previous() -> dict:
+    if OUT.exists():
+        try:
+            payload = json.loads(OUT.read_text(encoding="utf-8"))
+            if payload.get("schemaVersion") == 1 and isinstance(payload.get("predictions"), list):
+                return payload
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+
     sep = "&" if "?" in HISTORY_URL else "?"
     url = f"{HISTORY_URL}{sep}t={int(time.time())}"
     req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
@@ -56,6 +64,14 @@ def load_previous() -> dict:
             json.JSONDecodeError, ValueError):
         pass
     return empty_history()
+
+
+def write_history(history: dict, update_timestamp: bool = False) -> None:
+    if update_timestamp:
+        history["updatedAt"] = int(datetime.now(timezone.utc).timestamp())
+    history["summary"] = summarize(history)
+    OUT.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")) + "\n",
+                   encoding="utf-8")
 
 
 def compact_model(model: dict) -> dict:
@@ -152,8 +168,14 @@ def summarize(history: dict) -> dict:
 
 
 def main() -> None:
+    history = load_previous()
     if not NOWCAST.exists():
-        print("WARNING: no site/nowcast.json to archive", file=sys.stderr)
+        write_history(history)
+        print(
+            f"WARNING: no site/nowcast.json to archive; preserved "
+            f"{len(history['predictions'])} historical predictions",
+            file=sys.stderr,
+        )
         return
     try:
         nowcast = json.loads(NOWCAST.read_text(encoding="utf-8"))
@@ -161,10 +183,10 @@ def main() -> None:
             raise ValueError("nowcast does not contain backtest baselines")
         cached = fetch_cache()
     except Exception as exc:
+        write_history(history)
         print(f"WARNING: nowcast history unavailable: {exc}", file=sys.stderr)
         return
 
-    history = load_previous()
     prediction = prediction_from_nowcast(nowcast)
     existing = {int(p["targetAt"]) for p in history["predictions"]}
     added = False
@@ -177,10 +199,7 @@ def main() -> None:
         history["predictions"] = history["predictions"][-MAX_PREDICTIONS:]
 
     newly_scored = score_pending(history, cached)
-    history["updatedAt"] = int(datetime.now(timezone.utc).timestamp())
-    history["summary"] = summarize(history)
-    OUT.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")) + "\n",
-                   encoding="utf-8")
+    write_history(history, update_timestamp=True)
 
     summary = history["summary"]
     print(

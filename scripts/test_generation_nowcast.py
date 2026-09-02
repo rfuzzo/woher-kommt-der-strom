@@ -3,10 +3,15 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
 from zoneinfo import ZoneInfo
 
+import update_nowcast_history as history_module
 from build_generation_nowcast import build_nowcast, reconcile_total
 from update_nowcast_history import summarize
 
@@ -115,6 +120,28 @@ class HistoryMigrationTests(unittest.TestCase):
         self.assertEqual(summary["modelScoredCount"]["corrected"], 1)
         self.assertEqual(summary["modelScoredCount"]["totalTrend"], 0)
         self.assertIsNone(summary["mae"]["totalTrend"]["generationMw"])
+
+    def test_missing_nowcast_preserves_restored_history(self) -> None:
+        history = {
+            "schemaVersion": 1,
+            "updatedAt": 123,
+            "predictions": [{"targetAt": 100, "actual": None}],
+            "summary": {},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "nowcast-history.json"
+            out.write_text(json.dumps(history), encoding="utf-8")
+            missing_nowcast = Path(directory) / "nowcast.json"
+            with (
+                mock.patch.object(history_module, "OUT", out),
+                mock.patch.object(history_module, "NOWCAST", missing_nowcast),
+            ):
+                history_module.main()
+
+            preserved = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(preserved["updatedAt"], 123)
+            self.assertEqual(len(preserved["predictions"]), 1)
+            self.assertEqual(preserved["summary"]["pendingCount"], 1)
 
 
 if __name__ == "__main__":

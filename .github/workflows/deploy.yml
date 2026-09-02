@@ -48,6 +48,15 @@ jobs:
         continue-on-error: true
         run: python scripts/inspect_apg_cache.py
 
+      # Keep the backtest durable even when APG or Deno is temporarily down.
+      # Each run uses a fresh immutable key and restores the newest prior file.
+      - name: Restore generation nowcast history
+        uses: actions/cache@v4
+        with:
+          path: site/nowcast-history.json
+          key: nowcast-history-${{ github.run_id }}
+          restore-keys: nowcast-history-
+
       # Experimental only. The nowcast is written to site/nowcast.json but the
       # frontend does not consume it yet. This lets us compare the estimate
       # against delayed official APG values before deciding whether to show it.

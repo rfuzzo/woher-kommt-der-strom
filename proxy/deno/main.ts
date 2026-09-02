@@ -6,6 +6,13 @@ const FETCH_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 1_000;
 const MANIFEST_KEY: Deno.KvKey = ["apg", "manifest"];
 const CHUNK_BYTES = 48_000;
+// cron-job.org may call every 15 minutes, but a full cache write at that rate
+// slightly exceeds Deno's free monthly KV write allowance.  A 25-minute gate
+// turns that schedule into at most one write every 30 minutes while still
+// keeping the cache comfortably inside the one-hour consumer freshness limit.
+const MIN_REFRESH_SECONDS = 25 * 60;
+const LEGACY_CLEANUP_LIMIT = 500;
+const CACHE_SLOTS = ["slot-a", "slot-b"] as const;
 const KINDS = ["AGPT", "AL", "CBPF", "DAFTG"] as const;
 type Kind = typeof KINDS[number];
 type DatasetName = "generation" | "load" | "borders" | "generationForecast";
@@ -163,10 +170,17 @@ function encodeChunks(value: unknown): Uint8Array[] {
   return chunks;
 }
 
+function datasetKey(cacheId: string, name: DatasetName, index: number): Deno.KvKey {
+  // UUID cache ids were used before bounded slots were introduced.  Keep
+  // reading them during migration; all new writes use the slot namespace.
+  const namespace = cacheId.startsWith("slot-") ? "slot" : "chunk";
+  return ["apg", namespace, cacheId, name, index];
+}
+
 async function writeDataset(kv: Deno.Kv, cacheId: string, name: DatasetName, value: ApgDataset): Promise<number> {
   const chunks = encodeChunks(value);
   for (let i = 0; i < chunks.length; i++) {
-    await kv.set(["apg", "chunk", cacheId, name, i], chunks[i]);
+    await kv.set(datasetKey(cacheId, name, i), chunks[i]);
   }
   return chunks.length;
 }
@@ -175,7 +189,7 @@ async function readDataset(kv: Deno.Kv, cacheId: string, name: DatasetName, coun
   const parts: Uint8Array[] = [];
   let total = 0;
   for (let i = 0; i < count; i++) {
-    const entry = await kv.get<Uint8Array>(["apg", "chunk", cacheId, name, i]);
+    const entry = await kv.get<Uint8Array>(datasetKey(cacheId, name, i));
     if (!entry.value) throw new Error(`missing cache chunk ${name}/${i}`);
     parts.push(entry.value);
     total += entry.value.length;
@@ -189,11 +203,54 @@ async function readDataset(kv: Deno.Kv, cacheId: string, name: DatasetName, coun
   return JSON.parse(new TextDecoder().decode(joined)) as ApgDataset;
 }
 
-async function refreshCache(): Promise<CachedPayload> {
-  const payload = await buildCache();
-  const cacheId = `${payload.fetchedAtEpoch}-${crypto.randomUUID()}`;
+async function payloadFromManifest(kv: Deno.Kv, manifest: CacheManifest): Promise<CachedPayload> {
+  const [generation, load, borders, generationForecast] = await Promise.all([
+    readDataset(kv, manifest.cacheId, "generation", manifest.chunks.generation),
+    readDataset(kv, manifest.cacheId, "load", manifest.chunks.load),
+    readDataset(kv, manifest.cacheId, "borders", manifest.chunks.borders),
+    readDataset(kv, manifest.cacheId, "generationForecast", manifest.chunks.generationForecast),
+  ]);
+  return {
+    schemaVersion: 3,
+    fetchedAt: manifest.fetchedAt,
+    fetchedAtEpoch: manifest.fetchedAtEpoch,
+    region: manifest.region,
+    window: manifest.window,
+    generation,
+    load,
+    borders,
+    generationForecast,
+  };
+}
+
+async function cleanupLegacyChunks(kv: Deno.Kv): Promise<number> {
+  const keys: Deno.KvKey[] = [];
+  for await (const entry of kv.list({ prefix: ["apg", "chunk"] }, { limit: LEGACY_CLEANUP_LIMIT })) {
+    keys.push(entry.key);
+  }
+  if (keys.length === 0) return 0;
+  let operation = kv.atomic();
+  for (const key of keys) operation = operation.delete(key);
+  const result = await operation.commit();
+  if (!result.ok) throw new Error("legacy cache cleanup transaction conflicted");
+  return keys.length;
+}
+
+async function refreshCache(): Promise<{ payload: CachedPayload; refreshed: boolean; legacyDeleted: number }> {
   const kv = await Deno.openKv();
   try {
+    const existingEntry = await kv.get<CacheManifest>(MANIFEST_KEY);
+    const existing = existingEntry.value;
+    const now = Math.floor(Date.now() / 1000);
+    if (existing?.schemaVersion === 3 && existing.chunks.generationForecast &&
+        now - existing.fetchedAtEpoch < MIN_REFRESH_SECONDS) {
+      const payload = await payloadFromManifest(kv, existing);
+      console.log(`APG cache refresh skipped; current cache is ${now - existing.fetchedAtEpoch}s old`);
+      return { payload, refreshed: false, legacyDeleted: 0 };
+    }
+
+    const payload = await buildCache();
+    const cacheId = existing?.cacheId === CACHE_SLOTS[0] ? CACHE_SLOTS[1] : CACHE_SLOTS[0];
     const chunks = {
       generation: await writeDataset(kv, cacheId, "generation", payload.generation),
       load: await writeDataset(kv, cacheId, "load", payload.load),
@@ -211,11 +268,16 @@ async function refreshCache(): Promise<CachedPayload> {
     };
     // Publish the manifest last so readers never see a partially written cache.
     await kv.set(MANIFEST_KEY, manifest);
+    // Old UUID-addressed chunks were never deleted.  Remove them in bounded
+    // batches after the manifest points at a reusable slot; future storage is
+    // then capped at two complete cache payloads.
+    const legacyDeleted = await cleanupLegacyChunks(kv);
+    console.log(`APG cache refreshed at ${payload.fetchedAt} from ${payload.region ?? "unknown region"}; ` +
+                `removed ${legacyDeleted} legacy chunks`);
+    return { payload, refreshed: true, legacyDeleted };
   } finally {
     kv.close();
   }
-  console.log(`APG cache refreshed at ${payload.fetchedAt} from ${payload.region ?? "unknown region"}`);
-  return payload;
 }
 
 async function readCache(): Promise<CachedPayload | null> {
@@ -224,23 +286,7 @@ async function readCache(): Promise<CachedPayload | null> {
     const entry = await kv.get<CacheManifest>(MANIFEST_KEY);
     const manifest = entry.value;
     if (!manifest || manifest.schemaVersion !== 3 || !manifest.chunks.generationForecast) return null;
-    const [generation, load, borders, generationForecast] = await Promise.all([
-      readDataset(kv, manifest.cacheId, "generation", manifest.chunks.generation),
-      readDataset(kv, manifest.cacheId, "load", manifest.chunks.load),
-      readDataset(kv, manifest.cacheId, "borders", manifest.chunks.borders),
-      readDataset(kv, manifest.cacheId, "generationForecast", manifest.chunks.generationForecast),
-    ]);
-    return {
-      schemaVersion: 3,
-      fetchedAt: manifest.fetchedAt,
-      fetchedAtEpoch: manifest.fetchedAtEpoch,
-      region: manifest.region,
-      window: manifest.window,
-      generation,
-      load,
-      borders,
-      generationForecast,
-    };
+    return await payloadFromManifest(kv, manifest);
   } finally {
     kv.close();
   }
@@ -288,9 +334,11 @@ Deno.serve(async (request) => {
 
   if (url.pathname === "/apg/refresh") {
     try {
-      const payload = await refreshCache();
+      const { payload, refreshed, legacyDeleted } = await refreshCache();
       return json({
         ok: true,
+        refreshed,
+        legacyDeleted,
         fetchedAt: payload.fetchedAt,
         region: payload.region,
         rows: {

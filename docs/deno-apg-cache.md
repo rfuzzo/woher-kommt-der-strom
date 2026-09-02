@@ -12,6 +12,10 @@ The Deno Deploy app at `woher-kommt-der-strom.rfuzzo.deno.net` is used as a smal
 - allows each APG request 30 seconds and retries once before abandoning a refresh;
 - is refreshed through the public production endpoint by a Europe-origin scheduler;
 - stores only the latest successful combined payload in Deno KV;
+- throttles successful KV writes to at most one every 25 minutes, so a
+  15-minute external schedule stays within the free monthly write allowance;
+- alternates between two reusable cache slots and gradually removes legacy
+  UUID-addressed chunks, preventing unbounded KV storage growth;
 - leaves the previous value intact when any APG request fails.
 
 Public endpoints:
@@ -52,4 +56,5 @@ US and Deno routed its request through the same failing path.
 A free setup is a 15-minute GET job at [cron-job.org](https://cron-job.org/)
 targeting `https://woher-kommt-der-strom.rfuzzo.deno.net/apg/refresh`. Test the
 job once and verify that it returns HTTP 200 with `"ok": true` before enabling
-the schedule.
+the schedule. Calls made while the cache is younger than 25 minutes return
+`"refreshed": false` and do not fetch APG or write KV.
