@@ -37,6 +37,20 @@ GitHub Pages
 
 The cache host does not need a database. A single static JSON file is enough.
 
+## Netcup VPS deployment
+
+The production VPS files live in `proxy/vps/`:
+
+- `apg_cache.py` fetches yesterday and today for `AGPT`, `AL`, `CBPF`, and
+  `DAFTG`, validates matching columns, and atomically replaces `latest.json`;
+- `apg-cache.timer` starts the fetch shortly after every quarter-hour;
+- `Caddyfile` serves the cache at
+  `https://strom-api.rfuzzo.de/apg/latest.json` with automatic HTTPS.
+
+APG or network failures leave the previous successful JSON file untouched.
+The Deno endpoint remains the fallback until the VPS has run successfully for
+several days.
+
 ## Cache payload
 
 Keep the proxy output close to APG's normalized time-series representation rather than mirroring the whole website payload. Suggested shape:

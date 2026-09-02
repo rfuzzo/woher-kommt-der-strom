@@ -1,0 +1,16 @@
+strom-api.rfuzzo.de {
+	encode zstd gzip
+
+	@latest path /apg/latest.json
+	handle @latest {
+		root * /var/lib/apg-cache
+		rewrite * /latest.json
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=60"
+		file_server
+	}
+
+	respond / "woher-kommt-der-strom APG cache\n" 200
+	respond 404
+}
+

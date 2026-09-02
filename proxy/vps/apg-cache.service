@@ -1,0 +1,21 @@
+[Unit]
+Description=Refresh the woher-kommt-der-strom APG cache
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=apg-cache
+Group=apg-cache
+StateDirectory=apg-cache
+StateDirectoryMode=0755
+Environment=APG_CACHE_OUTPUT=/var/lib/apg-cache/latest.json
+Environment=APG_CACHE_REGION=netcup-vps
+ExecStart=/usr/bin/python3 /opt/woher-kommt-der-strom/apg_cache.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
