@@ -81,6 +81,10 @@ existing Energy-Charts result is published unchanged. The page therefore
 remains robust while avoiding the extra aggregation delay whenever APG has a
 newer complete sample.
 
+Experimental generation predictions are collected and scored every 15 minutes
+in SQLite on the Netcup VPS. GitHub Pages mirrors the exported JSON; its
+best-effort workflow schedule no longer determines the backtest sample cadence.
+
 The newest values from either source can still be provisional and revised.
 The page shows the data timestamp and its age instead of implying that the
 figures are live measurements.

@@ -68,6 +68,24 @@ class TotalTrendTests(unittest.TestCase):
         self.assertAlmostEqual(sum(result.values()), 1100.0)
         self.assertTrue(all(value >= 0 for value in result.values()))
 
+    def test_reconcile_total_preserves_negative_pumped_storage(self) -> None:
+        groups = {
+            "hydro": 1470.0,
+            "fossil": 18.0,
+            "wind": 623.1,
+            "pumped": -1588.0,
+            "biomass": 256.0,
+            "other": 22.1,
+            "solar": 3620.1,
+        }
+        result = reconcile_total(groups, 4961.3)
+
+        self.assertEqual(result["pumped"], -1588.0)
+        self.assertEqual(result["wind"], 623.1)
+        self.assertEqual(result["solar"], 3620.1)
+        self.assertAlmostEqual(sum(result.values()), 4961.3)
+        self.assertLess(max(result.values()), 4000.0)
+
     def test_build_adds_total_forecast_change_to_anchor_actual(self) -> None:
         now = int(datetime.now(timezone.utc).timestamp())
         target = now - now % (15 * 60)

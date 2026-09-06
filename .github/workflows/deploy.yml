@@ -48,8 +48,8 @@ jobs:
         continue-on-error: true
         run: python scripts/inspect_apg_cache.py
 
-      # Keep the backtest durable even when APG or Deno is temporarily down.
-      # Each run uses a fresh immutable key and restores the newest prior file.
+      # The VPS SQLite database is authoritative. This cache only preserves the
+      # last mirrored export if the VPS is temporarily unreachable during a build.
       - name: Restore generation nowcast history
         uses: actions/cache@v4
         with:
@@ -57,21 +57,11 @@ jobs:
           key: nowcast-history-${{ github.run_id }}
           restore-keys: nowcast-history-
 
-      # Experimental only. The nowcast is written to site/nowcast.json but the
-      # frontend does not consume it yet. This lets us compare the estimate
-      # against delayed official APG values before deciding whether to show it.
-      - name: Build experimental generation nowcast
+      # Collection and scoring run every 15 minutes on the VPS. Mirror its
+      # current point-in-time estimate and SQLite-backed history into Pages.
+      - name: Mirror VPS generation nowcasts
         continue-on-error: true
-        run: python scripts/build_generation_nowcast.py
-
-      # Restore the previously deployed pending predictions, add the current
-      # target once, and score older targets whenever APG actuals have arrived.
-      # The resulting history is deployed with the site and becomes the input
-      # for the next build, so no mutable GitHub cache or repository commits are
-      # needed for experimental backtesting.
-      - name: Update generation nowcast backtest
-        continue-on-error: true
-        run: python scripts/update_nowcast_history.py
+        run: python scripts/sync_vps_nowcasts.py
 
       - name: Check the data actually landed
         run: |

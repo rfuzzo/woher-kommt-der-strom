@@ -43,6 +43,8 @@ The production VPS files live in `proxy/vps/`:
 
 - `apg_cache.py` fetches yesterday and today for `AGPT`, `AL`, `CBPF`, and
   `DAFTG`, validates matching columns, and atomically replaces `latest.json`;
+- `nowcast_store.py` records every prediction in SQLite, scores it when APG
+  publishes the target interval, and atomically exports current/history JSON;
 - `apg-cache.timer` starts the fetch shortly after every quarter-hour;
 - `Caddyfile` serves the cache at
   `https://strom-api.rfuzzo.de/apg/latest.json` with automatic HTTPS.
@@ -50,6 +52,9 @@ The production VPS files live in `proxy/vps/`:
 APG or network failures leave the previous successful JSON file untouched.
 Consumers try the VPS endpoint first and automatically use the Deno endpoint
 when the VPS result is unavailable, invalid, or more than one hour old.
+The VPS prediction exports are available at `/apg/nowcast.json` and
+`/apg/nowcast-history.json`; GitHub Pages mirrors them but no longer owns the
+mutable backtest history.
 
 ## Cache payload
 

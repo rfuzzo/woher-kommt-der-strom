@@ -86,21 +86,26 @@ def rounded_model(groups: dict[str, float]) -> dict:
 
 
 def reconcile_total(groups: dict[str, float], target_total: float) -> dict[str, float]:
-    """Scale non-wind/solar groups so the mix reaches target_total.
+    """Scale positive non-wind/solar groups so the mix reaches target_total.
 
     Wind and solar retain their independently corrected values.  The remaining
-    groups keep the anchor mix rather than attributing the forecast movement to
-    one technology without evidence.
+    positive groups keep the anchor mix rather than attributing the forecast
+    movement to one technology without evidence. Signed groups such as pumped
+    storage are preserved: including a negative value in the scaling denominator
+    and then clamping it to zero can make the reconciled sum explode.
     """
     result = dict(groups)
     fixed = result["wind"] + result["solar"]
     flexible = tuple(key for key in result if key not in {"wind", "solar"})
-    current_flexible = sum(result[key] for key in flexible)
-    target_flexible = max(0.0, target_total - fixed)
-    if current_flexible > 0:
-        scale = target_flexible / current_flexible
-        for key in flexible:
-            result[key] = max(0.0, result[key] * scale)
+    scalable = tuple(key for key in flexible if result[key] > 0)
+    preserved = tuple(key for key in flexible if result[key] <= 0)
+    current_scalable = sum(result[key] for key in scalable)
+    preserved_total = sum(result[key] for key in preserved)
+    target_scalable = max(0.0, target_total - fixed - preserved_total)
+    if current_scalable > 0:
+        scale = target_scalable / current_scalable
+        for key in scalable:
+            result[key] *= scale
     return result
 
 
@@ -194,7 +199,7 @@ def build_nowcast(cached: dict) -> dict:
     return {
         "schemaVersion": 2,
         "experimental": True,
-        "model": "apg-forecast-bias-v0",
+        "model": "apg-forecast-bias-v1",
         "generatedAt": now_epoch,
         "anchorAt": anchor_at,
         "anchorForecastAt": anchor_forecast_at,

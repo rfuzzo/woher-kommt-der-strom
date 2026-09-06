@@ -1,10 +1,10 @@
 strom-api.rfuzzo.de {
 	encode zstd gzip
 
-	@latest path /apg/latest.json
-	handle @latest {
+	@exports path /apg/latest.json /apg/nowcast.json /apg/nowcast-history.json
+	handle @exports {
+		uri strip_prefix /apg
 		root * /var/lib/apg-cache
-		rewrite * /latest.json
 		header Access-Control-Allow-Origin "*"
 		header Cache-Control "public, max-age=60"
 		file_server
@@ -13,4 +13,3 @@ strom-api.rfuzzo.de {
 	respond / "woher-kommt-der-strom APG cache\n" 200
 	respond 404
 }
-
