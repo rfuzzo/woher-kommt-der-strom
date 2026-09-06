@@ -9,6 +9,7 @@
 const ORDER = ['hydro', 'fossil', 'wind', 'solar', 'pumped', 'biomass', 'other'];
 const REPO = 'https://github.com/rfuzzo/woher-kommt-der-strom';
 const WASSER = 'https://rfuzzo.github.io/woher-kommt-das-wasser/';
+const NOWCAST_URL = 'https://strom-api.rfuzzo.de/apg/nowcast.json';
 
 const COLOR = k => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim();
 
@@ -121,6 +122,13 @@ const I18N = {
     importing: 'Import nach Österreich',
     exporting: 'Export aus Österreich',
     generation: 'Erzeugung',
+    nowcastTitle: 'Schätzung für jetzt',
+    estimated: 'Geschätzt',
+    estimatedGeneration: 'Erzeugung',
+    estimatedWind: 'Wind',
+    estimatedSolar: 'Photovoltaik',
+    basedOnOfficial: 'letzter offizieller Wert: {time}',
+    nowcastNote: 'Modellschätzung für den aktuellen Viertelstundenwert. Wind und Photovoltaik folgen den APG-Prognosen; die übrigen Erzeugungsarten werden vom letzten offiziellen Messpunkt übernommen. Die offiziellen Werte auf der Seite bleiben unverändert.',
     load: 'Last',
     renew: 'Erneuerbaren-Anteil',
     price: 'Day-Ahead-Preis',
@@ -232,6 +240,13 @@ const I18N = {
     importing: 'Importing into Austria',
     exporting: 'Exporting from Austria',
     generation: 'Generation',
+    nowcastTitle: 'Estimate for now',
+    estimated: 'Estimated',
+    estimatedGeneration: 'Generation',
+    estimatedWind: 'Wind',
+    estimatedSolar: 'Solar',
+    basedOnOfficial: 'last official value: {time}',
+    nowcastNote: 'Model estimate for the current quarter-hour. Wind and solar follow the APG forecasts; the other generation sources are carried forward from the latest official measurement. The official values on this page remain unchanged.',
     load: 'Load',
     renew: 'Renewable share',
     price: 'Day-ahead price',
@@ -261,6 +276,7 @@ const I18N = {
 
 let LANG = (localStorage.getItem('lang') || (navigator.language || '').slice(0, 2)) === 'en' ? 'en' : 'de';
 let DATA = null;
+let NOWCAST = null;
 let DAY_RANGE = 'day';
 const t = k => I18N[LANG][k];
 const label = g => LANG === 'de' ? g.de : g.en;
@@ -417,6 +433,52 @@ function renderTiles() {
     if (x.d) c.append(el('div', 'd', x.d));
     box.append(c);
   }
+}
+
+/* ── current-generation estimate ─────────────────────────────────────── */
+
+function validNowcast(value) {
+  if (!value || value.schemaVersion !== 2 || !value.groups) return false;
+  const numbers = [value.generatedAt, value.anchorAt, value.targetAt,
+    value.generationMw, value.groups.wind, value.groups.solar];
+  if (!numbers.every(Number.isFinite)) return false;
+
+  // A stale estimate is more misleading than no estimate. The VPS normally
+  // refreshes every 15 minutes; this still leaves room for one missed run.
+  const now = Date.now() / 1000;
+  return now - value.generatedAt <= 45 * 60
+    && now - value.targetAt <= 45 * 60
+    && value.targetAt - now <= 30 * 60;
+}
+
+function renderNowcast() {
+  const section = document.getElementById('nowcast');
+  if (!validNowcast(NOWCAST)) {
+    section.hidden = true;
+    return;
+  }
+
+  const target = dateFmt().format(new Date(NOWCAST.targetAt * 1000));
+  const anchor = dateFmt().format(new Date(NOWCAST.anchorAt * 1000));
+  const stamp = document.getElementById('nowcastStamp');
+  stamp.textContent = '';
+  stamp.append(el('span', 'dot estimate-dot'), document.createTextNode(
+    `${t('asOf')} ${target} · ${t('basedOnOfficial').replace('{time}', anchor)}`));
+
+  const values = [
+    { label: t('estimatedGeneration'), value: NOWCAST.generationMw, color: 'generation' },
+    { label: t('estimatedWind'), value: NOWCAST.groups.wind, color: 'wind' },
+    { label: t('estimatedSolar'), value: NOWCAST.groups.solar, color: 'solar' },
+  ];
+  const box = document.getElementById('nowcastValues');
+  box.textContent = '';
+  for (const item of values) {
+    const card = el('div', `nowcast-value ${item.color}`);
+    card.append(el('div', 'k', item.label),
+      el('div', 'v', `${nf(item.value)}<small>MW</small>`));
+    box.append(card);
+  }
+  section.hidden = false;
 }
 
 /* ── the mix ──────────────────────────────────────────────────────────── */
@@ -1732,6 +1794,7 @@ function renderAll() {
   document.getElementById('lang').textContent = LANG === 'de' ? 'EN' : 'DE';
   renderStamp();
   renderTiles();
+  renderNowcast();
   renderMix();
   renderCleanScore();
   renderRangeButtons();
@@ -1805,6 +1868,22 @@ fetch('data.json?' + Date.now())
     DATA = d;
     document.getElementById('app').hidden = false;
     renderAll();
+    // The VPS updates every 15 minutes, while GitHub Pages rebuilds less
+    // predictably. Read the live estimate first and use the mirrored file as
+    // a resilient fallback. Caddy exposes this endpoint with CORS enabled.
+    const nowcastSources = [NOWCAST_URL, 'nowcast.json?' + Date.now()];
+    const loadNowcast = index => fetch(nowcastSources[index], { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+      .then(d => {
+        if (!validNowcast(d)) throw new Error('stale or invalid estimate');
+        NOWCAST = d;
+        renderNowcast();
+      })
+      .catch(e => {
+        if (index + 1 < nowcastSources.length) return loadNowcast(index + 1);
+        console.warn('generation estimate unavailable:', e);
+      });
+    loadNowcast(0);
     // trace.json is produced on a slower cadence than data.json and may be
     // absent on a fresh deploy, so its failure is contained too.
     fetch('trace.json?' + Date.now())

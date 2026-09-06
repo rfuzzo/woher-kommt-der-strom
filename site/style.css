@@ -14,6 +14,8 @@
   --grid:           #e1e0d9;
   --axis:           #c3c2b7;
   --hairline:       rgba(11, 11, 11, 0.10);
+  --estimate-bg:    rgba(237, 161, 0, 0.075);
+  --estimate-line:  rgba(237, 161, 0, 0.42);
 
   --hydro:          #2a78d6;
   --fossil:         #eb6834;
@@ -42,6 +44,8 @@
     --grid:        #2c2c2a;
     --axis:        #383835;
     --hairline:    rgba(255, 255, 255, 0.10);
+    --estimate-bg: rgba(201, 133, 0, 0.12);
+    --estimate-line: rgba(201, 133, 0, 0.58);
 
     --hydro:       #3987e5;
     --fossil:      #d95926;
@@ -67,6 +71,8 @@
   --grid:        #2c2c2a;
   --axis:        #383835;
   --hairline:    rgba(255, 255, 255, 0.10);
+  --estimate-bg: rgba(201, 133, 0, 0.12);
+  --estimate-line: rgba(201, 133, 0, 0.58);
 
   --hydro:       #3987e5;
   --fossil:      #d95926;
@@ -225,6 +231,80 @@ h2 {
 
 .tile .v small { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
 .tile .d { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+
+/* ── nowcast ────────────────────────────────────────────────────────── */
+
+.nowcast {
+  background: linear-gradient(135deg, var(--estimate-bg), var(--surface) 58%);
+  border-color: var(--estimate-line);
+  box-shadow: inset 4px 0 0 var(--solar);
+}
+
+.nowcast-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.nowcast-head h2 { margin-bottom: 5px; }
+.nowcast-stamp { margin: 0; }
+.estimate-dot { background: var(--solar); }
+
+.estimate-badge {
+  flex-shrink: 0;
+  border: 1px solid var(--estimate-line);
+  border-radius: 999px;
+  background: var(--estimate-bg);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  padding: 4px 9px;
+  text-transform: uppercase;
+}
+
+.nowcast-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.nowcast-value {
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid var(--hairline);
+  border-top: 3px solid var(--ink-muted);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.nowcast-value.wind { border-top-color: var(--wind); }
+.nowcast-value.solar { border-top-color: var(--solar); }
+
+.nowcast-value .k {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nowcast-value .v {
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin-top: 4px;
+}
+
+.nowcast-value .v small {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 3px;
+}
 
 /* ── share bar ──────────────────────────────────────────────────────── */
 
@@ -542,6 +622,9 @@ footer p { margin: 0 0 9px; max-width: 76ch; }
   .wrap { padding: 22px 14px 48px; }
   section { padding: 17px 15px; }
   .tile .v { font-size: 25px; }
+  .nowcast-values { grid-template-columns: 1fr; }
+  .nowcast-value { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .nowcast-value .v { font-size: 22px; margin-top: 0; }
   .sectionhead { align-items: flex-start; flex-direction: column; }
 }
 

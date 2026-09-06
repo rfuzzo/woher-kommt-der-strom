@@ -6,7 +6,7 @@
 <title>Woher kommt der Strom? — Österreichs Stromnetz</title>
 <meta name="description" content="Woher Österreichs Strom gerade kommt: Erzeugungsmix, Tagesverlauf und Grenzflüsse, aus offenen Daten von Energy-Charts (Fraunhofer ISE).">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="style.css?v=4993b65510">
+<link rel="stylesheet" href="style.css?v=85ad9defac">
 </head>
 <body>
 <div class="wrap">
@@ -28,6 +28,18 @@
   <div id="app" hidden>
 
     <div class="tiles" id="tiles"></div>
+
+    <section class="nowcast" id="nowcast" hidden aria-live="polite">
+      <div class="nowcast-head">
+        <div>
+          <h2 data-i18n="nowcastTitle">Schätzung für jetzt</h2>
+          <p class="stamp nowcast-stamp" id="nowcastStamp"></p>
+        </div>
+        <span class="estimate-badge" data-i18n="estimated">Geschätzt</span>
+      </div>
+      <div class="nowcast-values" id="nowcastValues"></div>
+      <p class="note" data-i18n="nowcastNote"></p>
+    </section>
 
     <section>
       <h2 data-i18n="mixTitle">Woher der Strom gerade kommt</h2>
@@ -201,6 +213,6 @@
   <div id="error" class="err" hidden></div>
 
 </div>
-<script src="app.js?v=040752f704"></script>
+<script src="app.js?v=f2db2656b9"></script>
 </body>
 </html>
