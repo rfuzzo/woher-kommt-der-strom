@@ -23,7 +23,8 @@ HISTORY_OUT = Path(
     os.environ.get("NOWCAST_HISTORY_OUTPUT", "/var/lib/apg-cache/nowcast-history.json")
 )
 MODELS = ("persistence", "rawForecast", "corrected", "totalTrend")
-METRICS = ("generationMw", "wind", "solar")
+GROUP_METRICS = ("hydro", "fossil", "wind", "solar", "pumped", "biomass", "other")
+METRICS = ("generationMw", "loadMw", "netImportMw", *GROUP_METRICS)
 BROKEN_LEGACY_MODEL = "totalTrendV0Broken"
 
 
@@ -52,8 +53,16 @@ def compact_model(model: dict) -> dict:
     groups = model["groups"]
     return {
         "generationMw": round(float(model["generationMw"]), 1),
-        "wind": round(float(groups["wind"]), 1),
-        "solar": round(float(groups["solar"]), 1),
+        **{
+            metric: round(float(groups[metric]), 1)
+            for metric in GROUP_METRICS
+            if metric in groups
+        },
+        **{
+            metric: round(float(model[metric]), 1)
+            for metric in ("loadMw", "netImportMw")
+            if metric in model
+        },
     }
 
 
@@ -125,6 +134,8 @@ def score_pending(
     connection: sqlite3.Connection, cached: dict, scored_at: int | None = None
 ) -> int:
     actual_series = overlay_apg.parse(cached["generation"])
+    actual_load = overlay_apg.parse(cached["load"])
+    actual_borders = overlay_apg.parse(cached["borders"])
     scored_at = scored_at or int(datetime.now(timezone.utc).timestamp())
     newly_scored = 0
     pending = connection.execute(
@@ -133,18 +144,28 @@ def score_pending(
     for target_at, models_json in pending:
         row = actual_series.get(int(target_at))
         groups = actual_groups(row) if row is not None else None
-        if groups is None:
+        load_row = actual_load.get(int(target_at))
+        border_row = actual_borders.get(int(target_at))
+        if (
+            groups is None
+            or load_row is None
+            or load_row.get("AL") is None
+            or border_row is None
+            or border_row.get("Sum") is None
+        ):
             continue
         actual = {
             "generationMw": round(sum(groups.values()), 1),
-            "wind": round(groups["wind"], 1),
-            "solar": round(groups["solar"], 1),
+            "loadMw": round(float(load_row["AL"]), 1),
+            "netImportMw": round(float(border_row["Sum"]), 1),
+            **{metric: round(groups[metric], 1) for metric in GROUP_METRICS},
         }
         models = json.loads(models_json)
         errors = {
             name: {
                 metric: round(float(model[metric]) - actual[metric], 1)
                 for metric in METRICS
+                if metric in model and metric in actual
             }
             for name, model in models.items()
         }

@@ -14,6 +14,11 @@ APG is now preferred for the freshness-sensitive Austrian tail:
 - actual total load via `AL`;
 - physical cross-border flows via `CBPF`.
 
+The separate nowcast additionally reads:
+
+- total, wind and solar generation forecasts via `DAFTG`;
+- day-ahead total-load forecasts via `ALF/Data/DALF`.
+
 Energy-Charts remains the source for:
 
 - neighbour-country generation used for import composition;
@@ -23,6 +28,27 @@ Energy-Charts remains the source for:
 - fallback when APG is unavailable or has no newer complete sample.
 
 The frontend still receives the same `site/data.json` shape.
+
+## Supply nowcast
+
+`proxy/vps/apg_cache.py` refreshes all five datasets every 15 minutes. The
+nowcast anchors every forecast to the latest complete observed quarter-hour:
+
+- wind and solar use their APG forecasts with a decaying correction for the
+  latest forecast error;
+- the change in APG's total-generation forecast determines the estimated
+  domestic-generation total;
+- hydro, fossil and positive pumped-storage generation share the residual in
+  their latest observed proportions, while biomass and other remain constant;
+- load uses the APG day-ahead forecast with a decaying level correction;
+- net import follows the change in the estimated load minus generation balance,
+  starting from the latest observed physical-flow balance.
+
+APG does not provide the technology-specific short-horizon forecasts needed to
+separate hydro, fossil and pumped-storage movements here. Their displayed
+values are therefore modelled allocations, not direct forecasts. Each estimate
+is stored in SQLite and later scored against the delayed `AGPT`, `AL` and
+`CBPF` actuals.
 
 ## Integration shape
 
@@ -87,4 +113,12 @@ APG ───── AGPT / AL / CBPF (newer complete 15-minute tail)
                         │
                         ▼
                    site/data.json
+
+APG ───── DAFTG / ALF-DALF + latest actuals
+                        │
+                        ▼
+               VPS nowcast + SQLite scoring
+                        │
+                        ▼
+                  site/nowcast.json
 ```

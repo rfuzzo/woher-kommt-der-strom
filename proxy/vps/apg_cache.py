@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch APG transparency data and atomically publish a schema-v3 cache file."""
+"""Fetch APG transparency data and atomically publish a schema-v4 cache file."""
 
 from __future__ import annotations
 
@@ -27,7 +27,9 @@ KINDS = {
     "load": "AL",
     "borders": "CBPF",
     "generationForecast": "DAFTG",
+    "loadForecast": "ALF",
 }
+PRODUCTS = {"loadForecast": "DALF"}
 
 
 def fetch_json(url: str) -> Any:
@@ -86,8 +88,15 @@ def merge_days(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_kind(kind: str, yesterday: date, today: date, tomorrow: date) -> dict[str, Any]:
-    base = f"{APG_HOST}/api/v1/{kind}/Data/English/PT15M"
+def fetch_kind(
+    kind: str,
+    yesterday: date,
+    today: date,
+    tomorrow: date,
+    product: str | None = None,
+) -> dict[str, Any]:
+    product_path = f"/{product}" if product else ""
+    base = f"{APG_HOST}/api/v1/{kind}/Data{product_path}/English/PT15M"
     previous = unwrap(fetch_json(f"{base}/{yesterday.isoformat()}T000000/{today.isoformat()}T000000"))
     current = unwrap(fetch_json(f"{base}/{today.isoformat()}T000000/{tomorrow.isoformat()}T000000"))
     return merge_days(previous, current)
@@ -101,14 +110,14 @@ def build_cache(now: Optional[datetime] = None) -> dict[str, Any]:
 
     def fetch(item: tuple[str, str]) -> tuple[str, dict[str, Any]]:
         name, kind = item
-        return name, fetch_kind(kind, yesterday, today, tomorrow)
+        return name, fetch_kind(kind, yesterday, today, tomorrow, PRODUCTS.get(name))
 
     with ThreadPoolExecutor(max_workers=len(KINDS)) as pool:
         datasets = dict(pool.map(fetch, KINDS.items()))
 
     fetched_at_epoch = int(datetime.now(timezone.utc).timestamp())
     return {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "fetchedAt": datetime.fromtimestamp(fetched_at_epoch, timezone.utc)
         .isoformat()
         .replace("+00:00", "Z"),

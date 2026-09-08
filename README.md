@@ -17,18 +17,25 @@ and snow depth from GeoSphere Austria.
 ## How it works
 
 ```
+Netcup VPS (every 15 min)
+  ├─ APG cache                actuals + generation/load forecasts
+  ├─ SQLite                   durable nowcasts and delayed scoring
+  └─ strom-api.rfuzzo.de      live cache + current estimate
+
 GitHub Actions (every 30 min)
   ├─ scripts/fetch_data.py    Energy-Charts base + reshape + precompute
   ├─ scripts/overlay_apg.py   fresher Austrian generation/load/physical flows
   ├─ scripts/trace_origin.py  every 3 h, cache-gated: 32 calls
-  ├─ site/data.json           one blob, everything the page needs
+  ├─ site/data.json           published-data panels
+  ├─ site/nowcast.json        mirrored estimate fallback
   ├─ site/trace.json          traced origin for the Sankey
   └─ site/                    uploaded as the Pages artifact
 ```
 
-The browser makes one request for data and does no arithmetic on it — every
-series, share and total is computed before deployment. `data.json` is not
-committed; each run rebuilds and deploys it, so the repo history stays clean.
+The browser reads the precomputed `data.json`, then fetches the live nowcast
+from the VPS (with the Pages copy as a fallback) and builds the selected donut
+view. `data.json` and the generated nowcast files are not committed; each run
+rebuilds and deploys them, so the repo history stays clean.
 
 No framework, no build step, no third-party JavaScript. The charts are
 hand-rolled SVG in `site/app.js`.
@@ -43,8 +50,8 @@ The site uses two public sources:
 - **Energy-Charts v2 API** (Fraunhofer ISE) for neighbour generation, prices,
   European tracing inputs, seasonal context and as the automatic fallback.
 
-APG's documented 15-minute endpoints used by the overlay are `AGPT`, `AL` and
-`CBPF`. The OpenAPI contract is published at
+APG's 15-minute datasets used by the overlay and nowcast are `AGPT`, `AL`,
+`CBPF`, `DAFTG` and `ALF/DALF`. The OpenAPI contract is published at
 `https://transparency.apg.at/api/swagger/v1/swagger.json`. See
 [`docs/apg-source.md`](docs/apg-source.md) for the mappings and mixed-source
 caveats.
@@ -52,6 +59,8 @@ caveats.
 | Panel | Source |
 |---|---|
 | Current Austrian generation mix and load | APG `AGPT` + `AL`, Energy-Charts fallback |
+| Estimated current supply mix | APG `DAFTG` generation forecast + `ALF/DALF` load forecast, anchored to the latest `AGPT`, `AL` and `CBPF` actuals |
+| Last-24-hour supply mix | Rolling mean of the APG-overlaid generation and positive net-import series |
 | Physical cross-border flows | APG `CBPF`, Energy-Charts fallback |
 | Seven-day/history base | Energy-Charts, with the newest APG tail appended |
 | Day-ahead price, trade valuation | Energy-Charts `/v2/price?bzn=AT` |
@@ -81,9 +90,17 @@ existing Energy-Charts result is published unchanged. The page therefore
 remains robust while avoiding the extra aggregation delay whenever APG has a
 newer complete sample.
 
-Experimental generation predictions are collected and scored every 15 minutes
-in SQLite on the Netcup VPS. GitHub Pages mirrors the exported JSON; its
-best-effort workflow schedule no longer determines the backtest sample cadence.
+Experimental supply predictions are collected and scored every 15 minutes in
+SQLite on the Netcup VPS. The selected estimate uses the short-term change in
+APG's total-generation forecast, bias-corrected wind, solar and load forecasts,
+and a projected net-import balance. Hydro, fossil and positive pumped-storage
+generation share the remaining domestic total in their latest observed
+proportions; biomass and other stay at their latest values. These are modelled
+allocations, not technology-specific APG forecasts.
+
+GitHub Pages mirrors the exported JSON; its best-effort workflow schedule no
+longer determines the backtest sample cadence. Every projected field is stored
+so it can be scored once APG publishes the corresponding actual interval.
 
 The newest values from either source can still be provisional and revised.
 The page shows the data timestamp and its age instead of implying that the

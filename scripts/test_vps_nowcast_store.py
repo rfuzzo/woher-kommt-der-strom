@@ -58,12 +58,18 @@ class VpsNowcastStoreTests(unittest.TestCase):
             "generatedAt": 90,
             "anchorAt": 40,
             "horizonMinutes": 60,
-            "model": "apg-forecast-bias-v1",
+            "model": "apg-supply-nowcast-v2",
             "diagnostics": {"total": {"targetMw": 100}},
             "models": {
                 name: {
                     "generationMw": 100,
-                    "groups": {"wind": 20, "solar": 10},
+                    "loadMw": 110,
+                    "netImportMw": 15,
+                    "groups": {
+                        "hydro": 20, "fossil": 30, "wind": 20,
+                        "solar": 10, "pumped": 0, "biomass": 10,
+                        "other": 10,
+                    },
                 }
                 for name in nowcast_store.MODELS
             },
@@ -76,15 +82,24 @@ class VpsNowcastStoreTests(unittest.TestCase):
         }
         self.assertTrue(nowcast_store.insert_prediction(self.connection, nowcast))
         with mock.patch.object(
-            nowcast_store.overlay_apg, "parse", return_value={100: actual_row}
+            nowcast_store.overlay_apg,
+            "parse",
+            side_effect=[{100: actual_row}, {100: {"AL": 110}}, {100: {"Sum": 15}}],
         ):
             self.assertEqual(
-                nowcast_store.score_pending(self.connection, {"generation": {}}, 200), 1
+                nowcast_store.score_pending(
+                    self.connection,
+                    {"generation": {}, "load": {}, "borders": {}},
+                    200,
+                ),
+                1,
             )
         exported = nowcast_store.export_history(self.connection, 300)
         self.assertEqual(exported["summary"]["scoredCount"], 1)
         self.assertEqual(exported["summary"]["modelScoredCount"]["totalTrend"], 1)
-        self.assertEqual(exported["predictions"][0]["modelVersion"], "apg-forecast-bias-v1")
+        self.assertEqual(exported["predictions"][0]["modelVersion"], "apg-supply-nowcast-v2")
+        self.assertEqual(exported["summary"]["mae"]["totalTrend"]["loadMw"], 0.0)
+        self.assertEqual(exported["summary"]["mae"]["totalTrend"]["netImportMw"], 0.0)
 
 
 if __name__ == "__main__":

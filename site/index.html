@@ -6,7 +6,7 @@
 <title>Woher kommt der Strom? — Österreichs Stromnetz</title>
 <meta name="description" content="Woher Österreichs Strom gerade kommt: Erzeugungsmix, Tagesverlauf und Grenzflüsse, aus offenen Daten von Energy-Charts (Fraunhofer ISE).">
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="style.css?v=85ad9defac">
+<link rel="stylesheet" href="style.css?v=cacab5b5b9">
 </head>
 <body>
 <div class="wrap">
@@ -29,20 +29,16 @@
 
     <div class="tiles" id="tiles"></div>
 
-    <section class="nowcast" id="nowcast" hidden aria-live="polite">
-      <div class="nowcast-head">
-        <div>
-          <h2 data-i18n="nowcastTitle">Schätzung für jetzt</h2>
-          <p class="stamp nowcast-stamp" id="nowcastStamp"></p>
-        </div>
-        <span class="estimate-badge" data-i18n="estimated">Geschätzt</span>
-      </div>
-      <div class="nowcast-values" id="nowcastValues"></div>
-      <p class="note" data-i18n="nowcastNote"></p>
-    </section>
-
     <section>
-      <h2 data-i18n="mixTitle">Woher der Strom gerade kommt</h2>
+      <div class="sectionhead">
+        <h2 id="mixTitle" data-i18n="mixTitle">Woher der Strom gerade kommt</h2>
+        <div class="segmented" id="mixButtons">
+          <button type="button" data-mix="now" data-i18n="mixNow">Jetzt</button>
+          <button type="button" data-mix="estimate" data-i18n="mixEstimate">Schätzung</button>
+          <button type="button" data-mix="day" data-i18n="mixDay">24 h</button>
+        </div>
+      </div>
+      <p class="stamp panelstamp" id="mixStamp"></p>
       <div class="mixlayout">
         <div class="donutwrap">
           <svg class="chart" id="mixDonut" role="img"></svg>
@@ -55,9 +51,11 @@
           <div class="legend" id="importedLegend"></div>
         </div>
       </div>
-      <h3 class="subhead" data-i18n="cleanScoreTitle">Saubere Versorgung · 24 Stunden</h3>
-      <div class="tradestats compact" id="cleanScore"></div>
-      <p class="note" data-i18n="mixNote"></p>
+      <div id="cleanScoreBlock" hidden>
+        <h3 class="subhead" data-i18n="cleanScoreTitle">Saubere Versorgung · 24 Stunden</h3>
+        <div class="tradestats compact" id="cleanScore"></div>
+      </div>
+      <p class="note" id="mixNote" data-i18n="mixNote"></p>
       <details>
         <summary data-i18n="tableToggle">Werte als Tabelle</summary>
         <div id="mixTable"></div>
@@ -213,6 +211,6 @@
   <div id="error" class="err" hidden></div>
 
 </div>
-<script src="app.js?v=f2db2656b9"></script>
+<script src="app.js?v=0dea72de11"></script>
 </body>
 </html>

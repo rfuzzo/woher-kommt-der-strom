@@ -2,7 +2,9 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[1] / "proxy" / "vps" / "apg_cache.py"
@@ -33,9 +35,23 @@ class VpsApgCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "latest.json"
             output.write_text('{"old":true}\n', encoding="utf-8")
-            apg_cache.atomic_write_json(output, {"schemaVersion": 3})
-            self.assertEqual(json.loads(output.read_text()), {"schemaVersion": 3})
+            apg_cache.atomic_write_json(output, {"schemaVersion": 4})
+            self.assertEqual(json.loads(output.read_text()), {"schemaVersion": 4})
             self.assertFalse((Path(directory) / ".latest.json.tmp").exists())
+
+    def test_load_forecast_uses_dalf_product_path(self):
+        response = {
+            "ValueColumns": [{"InternalName": "LF"}],
+            "ValueRows": [],
+        }
+        yesterday = date(2026, 9, 7)
+        today = date(2026, 9, 8)
+        tomorrow = date(2026, 9, 9)
+        with mock.patch.object(apg_cache, "fetch_json", return_value=response) as fetch:
+            apg_cache.fetch_kind("ALF", yesterday, today, tomorrow, "DALF")
+
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIn("/ALF/Data/DALF/English/PT15M/", fetch.call_args_list[0].args[0])
 
 
 if __name__ == "__main__":

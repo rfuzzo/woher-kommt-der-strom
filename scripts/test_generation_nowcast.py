@@ -50,6 +50,8 @@ class TotalTrendTests(unittest.TestCase):
 
         self.assertEqual(result["wind"], 600.0)
         self.assertEqual(result["solar"], 500.0)
+        self.assertEqual(result["biomass"], 200.0)
+        self.assertEqual(result["other"], 300.0)
         self.assertAlmostEqual(sum(result.values()), 6000.0)
         self.assertAlmostEqual(result["hydro"] / result["fossil"], 2.0)
 
@@ -65,7 +67,7 @@ class TotalTrendTests(unittest.TestCase):
         }
         result = reconcile_total(groups, 900.0)
 
-        self.assertAlmostEqual(sum(result.values()), 1100.0)
+        self.assertAlmostEqual(sum(result.values()), 1300.0)
         self.assertTrue(all(value >= 0 for value in result.values()))
 
     def test_reconcile_total_preserves_negative_pumped_storage(self) -> None:
@@ -97,14 +99,20 @@ class TotalTrendTests(unittest.TestCase):
         actual_values = [200, 300, 200, 100, 50, 400, 1200, 800, 25, 100, 600, 25, 500]
         anchor_total = sum(actual_values)
         cached = {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "generation": dataset(actual_names, [apg_row(anchor, actual_values)]),
+            "load": dataset(["AL"], [apg_row(anchor, [5000])]),
+            "borders": dataset(["Sum"], [apg_row(anchor, [700])]),
             "generationForecast": dataset(
                 ["DAFTG", "DAFWG", "DAFSG"],
                 [
                     apg_row(anchor, [3000, 550, 450]),
                     apg_row(target, [3400, 650, 550]),
                 ],
+            ),
+            "loadForecast": dataset(
+                ["LF"],
+                [apg_row(anchor, [4800]), apg_row(target, [5000])],
             ),
         }
 
@@ -117,6 +125,12 @@ class TotalTrendTests(unittest.TestCase):
             delta=0.2,
         )
         self.assertEqual(result["diagnostics"]["total"]["forecastChangeMw"], 400.0)
+        self.assertGreater(result["loadMw"], 5000.0)
+        self.assertAlmostEqual(
+            result["netImportMw"],
+            700 + (result["loadMw"] - 5000) - 400,
+            delta=0.2,
+        )
 
 
 class HistoryMigrationTests(unittest.TestCase):

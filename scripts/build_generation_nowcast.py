@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""Build an experimental near-real-time Austrian generation nowcast.
+"""Build an experimental near-real-time Austrian supply nowcast.
 
 This does NOT replace official APG data. It writes site/nowcast.json so the
 model can be observed and backtested first.
 
-v0 model:
+Current model:
 - anchor on the newest complete APG generation-per-type row;
 - wind follows APG's current wind forecast, corrected by the latest observed
   forecast error, with the correction decaying over a two-hour half-life;
 - solar feed-in follows APG's solar feed-in forecast, calibrated by the latest
   actual/forecast ratio (bounded to avoid wild corrections);
-- all other generation groups use persistence from the latest official row.
+- APG's change in total generation forecast sets the domestic-generation total;
+- hydro, fossil and pumped storage share the non-wind/solar forecast residual
+  in their latest observed proportions; biomass and other use persistence;
+- load follows APG's day-ahead load forecast with a decaying bias correction;
+- net imports follow the change in the estimated load-generation balance from
+  the latest official physical-flow observation.
 
-An additional totalTrend candidate uses only the change in APG's total
-generation forecast.  Its forecast level has a large systematic offset from
-the generation-per-type total, but its short-term direction can still be
-useful.  Keeping it as a separate model lets point-in-time backtesting decide
-whether it should replace v0.
+The older candidates remain in the payload for point-in-time backtesting.
 """
 
 from __future__ import annotations
@@ -86,17 +87,19 @@ def rounded_model(groups: dict[str, float]) -> dict:
 
 
 def reconcile_total(groups: dict[str, float], target_total: float) -> dict[str, float]:
-    """Scale positive non-wind/solar groups so the mix reaches target_total.
+    """Scale dispatchable groups so the mix reaches the forecast total.
 
-    Wind and solar retain their independently corrected values.  The remaining
-    positive groups keep the anchor mix rather than attributing the forecast
-    movement to one technology without evidence. Signed groups such as pumped
-    storage are preserved: including a negative value in the scaling denominator
-    and then clamping it to zero can make the reconciled sum explode.
+    Wind and solar retain their independently corrected values. Biomass and
+    other are small and stable enough to keep at persistence. Hydro, fossil and
+    positive pumped-storage generation share the remaining change in their
+    latest observed proportions. Signed pumped storage is preserved: including
+    a negative value in the scaling denominator and then clamping it to zero can
+    make the reconciled sum explode.
     """
     result = dict(groups)
-    fixed = result["wind"] + result["solar"]
-    flexible = tuple(key for key in result if key not in {"wind", "solar"})
+    fixed_keys = {"wind", "solar", "biomass", "other"}
+    fixed = sum(result[key] for key in fixed_keys)
+    flexible = tuple(key for key in ("hydro", "fossil", "pumped") if key in result)
     scalable = tuple(key for key in flexible if result[key] > 0)
     preserved = tuple(key for key in flexible if result[key] <= 0)
     current_scalable = sum(result[key] for key in scalable)
@@ -110,15 +113,21 @@ def reconcile_total(groups: dict[str, float], target_total: float) -> dict[str, 
 
 
 def build_nowcast(cached: dict) -> dict:
-    if cached.get("schemaVersion") != 3:
-        raise ValueError("generation forecast requires APG cache schema 3")
+    if cached.get("schemaVersion") != 4:
+        raise ValueError("supply nowcast requires APG cache schema 4")
     forecast_payload = cached.get("generationForecast")
     if not isinstance(forecast_payload, dict):
         raise ValueError("APG cache has no generationForecast dataset")
+    load_forecast_payload = cached.get("loadForecast")
+    if not isinstance(load_forecast_payload, dict):
+        raise ValueError("APG cache has no loadForecast dataset")
 
     actual = overlay_apg.parse(cached["generation"])
     forecast = overlay_apg.parse(forecast_payload)
-    if not actual or not forecast:
+    actual_load = overlay_apg.parse(cached["load"])
+    actual_borders = overlay_apg.parse(cached["borders"])
+    load_forecast = overlay_apg.parse(load_forecast_payload)
+    if not actual or not forecast or not actual_load or not actual_borders or not load_forecast:
         raise ValueError("APG actual or forecast series is empty")
 
     anchor: tuple[int, dict[str, float | None], dict[str, float]] | None = None
@@ -131,6 +140,15 @@ def build_nowcast(cached: dict) -> dict:
         raise ValueError("no complete official APG generation row")
 
     anchor_at, actual_row, anchor_groups = anchor
+    anchor_load_row = latest_at_or_before(actual_load, anchor_at, max_gap=15 * 60)
+    anchor_border_row = latest_at_or_before(actual_borders, anchor_at, max_gap=15 * 60)
+    if anchor_load_row is None or anchor_load_row[1].get("AL") is None:
+        raise ValueError("no APG actual load at generation anchor")
+    if anchor_border_row is None or anchor_border_row[1].get("Sum") is None:
+        raise ValueError("no APG physical-flow balance at generation anchor")
+    anchor_load = float(anchor_load_row[1]["AL"])
+    anchor_net_import = float(anchor_border_row[1]["Sum"])
+
     anchor_forecast = latest_at_or_before(forecast, anchor_at, max_gap=60 * 60)
     if anchor_forecast is None:
         raise ValueError("no APG generation forecast near latest official generation row")
@@ -142,6 +160,10 @@ def build_nowcast(cached: dict) -> dict:
     if target is None:
         raise ValueError("no current APG generation forecast row")
     target_at, forecast_target_row = target
+    load_anchor_forecast = latest_at_or_before(load_forecast, anchor_at, max_gap=60 * 60)
+    load_target_forecast = latest_at_or_before(load_forecast, target_at, max_gap=60 * 60)
+    if load_anchor_forecast is None or load_target_forecast is None:
+        raise ValueError("no APG load forecast near nowcast interval")
 
     horizon = target_at - anchor_at
     if horizon < 0:
@@ -189,25 +211,42 @@ def build_nowcast(cached: dict) -> dict:
     total_trend_target = max(variable_target, anchor_total + forecast_change)
     total_trend_groups = reconcile_total(corrected_groups, total_trend_target)
 
+    load_anchor_fc = forecast_value(load_anchor_forecast[1], "LF")
+    load_target_fc = forecast_value(load_target_forecast[1], "LF")
+    if load_anchor_fc is None or load_target_fc is None:
+        raise ValueError("APG forecast is missing total load")
+    load_bias = anchor_load - load_anchor_fc
+    load_target = max(0.0, load_target_fc + load_bias * weight)
+
     models = {
         "persistence": rounded_model(persistence_groups),
         "rawForecast": rounded_model(raw_groups),
         "corrected": rounded_model(corrected_groups),
         "totalTrend": rounded_model(total_trend_groups),
     }
-    corrected = models["corrected"]
+    for model in models.values():
+        model["loadMw"] = round(load_target, 1)
+        model["netImportMw"] = round(
+            anchor_net_import
+            + (load_target - anchor_load)
+            - (float(model["generationMw"]) - anchor_total),
+            1,
+        )
+    selected = models["totalTrend"]
     return {
         "schemaVersion": 2,
         "experimental": True,
-        "model": "apg-forecast-bias-v1",
+        "model": "apg-supply-nowcast-v2",
         "generatedAt": now_epoch,
         "anchorAt": anchor_at,
         "anchorForecastAt": anchor_forecast_at,
         "targetAt": target_at,
         "horizonMinutes": horizon // 60,
         "correctionWeight": round(weight, 4),
-        "generationMw": corrected["generationMw"],
-        "groups": corrected["groups"],
+        "generationMw": selected["generationMw"],
+        "loadMw": selected["loadMw"],
+        "netImportMw": selected["netImportMw"],
+        "groups": selected["groups"],
         "models": models,
         "diagnostics": {
             "total": {
@@ -229,11 +268,22 @@ def build_nowcast(cached: dict) -> dict:
                 "forecastTargetMw": round(solar_target_fc, 1),
                 **solar_correction,
             },
+            "load": {
+                "actualAnchorMw": round(anchor_load, 1),
+                "forecastAnchorMw": round(load_anchor_fc, 1),
+                "forecastTargetMw": round(load_target_fc, 1),
+                "anchorBiasMw": round(load_bias, 1),
+            },
+            "netImport": {
+                "actualAnchorMw": round(anchor_net_import, 1),
+                "method": "change-in-load-minus-generation-balance",
+            },
         },
         "notes": [
-            "Wind and solar are model estimates; other generation groups use persistence from the latest official APG row.",
+            "Wind and solar use bias-corrected APG forecasts; the APG total forecast sets total domestic generation.",
+            "Hydro, fossil and pumped storage share the remaining forecast total in their latest observed proportions; biomass and other use persistence.",
+            "Load uses APG's day-ahead forecast with a decaying bias correction; net imports follow the change in the load-generation balance.",
             "Persistence and raw-forecast baselines are included for point-in-time backtesting.",
-            "The total-trend candidate follows changes in APG's total forecast while preserving the corrected wind and solar estimates.",
             "This file is experimental and is not used as the site's official current generation value.",
         ],
     }

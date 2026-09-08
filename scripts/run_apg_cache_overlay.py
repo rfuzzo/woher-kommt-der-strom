@@ -25,7 +25,7 @@ DEFAULT_CACHE_URLS = (
 )
 MAX_CACHE_AGE_SECONDS = 60 * 60
 TIMEOUT_SECONDS = 12
-SUPPORTED_SCHEMAS = {3}
+SUPPORTED_SCHEMAS = {3, 4}
 
 
 def cache_urls() -> tuple[str, ...]:
@@ -70,6 +70,14 @@ def fetch_one(url: str) -> dict:
             raise ValueError(f"APG cache missing {name}")
         if not dataset.get("ValueColumns") or not dataset.get("ValueRows"):
             raise ValueError(f"APG cache {name} is empty")
+    if schema >= 4:
+        dataset = payload.get("loadForecast")
+        if (
+            not isinstance(dataset, dict)
+            or not dataset.get("ValueColumns")
+            or not dataset.get("ValueRows")
+        ):
+            raise ValueError("APG cache loadForecast is missing or empty")
 
     return payload
 
@@ -94,6 +102,11 @@ def fetch_cache() -> dict:
             f"{len(payload['load']['ValueRows'])}/"
             f"{len(payload['borders']['ValueRows'])}/"
             f"{len(payload['generationForecast']['ValueRows'])}"
+            + (
+                f"/{len(payload['loadForecast']['ValueRows'])}"
+                if payload.get("loadForecast")
+                else ""
+            )
         )
         return payload
 

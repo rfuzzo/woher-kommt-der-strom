@@ -15,10 +15,10 @@ APG Transparency API
         ▼
 small EU-hosted fetch job
         │
-        ├─ fetch AGPT / AL / CBPF
-        ├─ validate newest complete 15-min interval
-        ├─ normalize to one compact JSON payload
-        └─ atomically replace a cached JSON file
+        ├─ fetch AGPT / AL / CBPF / DAFTG / ALF-DALF
+        ├─ atomically replace the validated cache
+        ├─ build and score supply nowcasts in SQLite
+        └─ export current/history JSON
         │
         ▼
 https://<host>/apg/latest.json
@@ -35,14 +35,16 @@ GitHub Actions
 GitHub Pages
 ```
 
-The cache host does not need a database. A single static JSON file is enough.
+The cache itself is a static JSON file. The same host also keeps the nowcast
+history in SQLite so collection is independent of GitHub Actions.
 
 ## Netcup VPS deployment
 
 The production VPS files live in `proxy/vps/`:
 
-- `apg_cache.py` fetches yesterday and today for `AGPT`, `AL`, `CBPF`, and
-  `DAFTG`, validates matching columns, and atomically replaces `latest.json`;
+- `apg_cache.py` fetches yesterday and today for `AGPT`, `AL`, `CBPF`, `DAFTG`
+  and `ALF/DALF`, validates matching columns, and atomically replaces
+  `latest.json`;
 - `nowcast_store.py` records every prediction in SQLite, scores it when APG
   publishes the target interval, and atomically exports current/history JSON;
 - `apg-cache.timer` starts the fetch shortly after every quarter-hour;
@@ -58,45 +60,10 @@ mutable backtest history.
 
 ## Cache payload
 
-Keep the proxy output close to APG's normalized time-series representation rather than mirroring the whole website payload. Suggested shape:
-
-```json
-{
-  "generatedAt": "2026-08-09T14:45:12+02:00",
-  "source": "apg",
-  "resolution": 900,
-  "generation": {
-    "t": [1786285800],
-    "groups": {
-      "hydro": [3100.0],
-      "fossil": [700.0],
-      "wind": [540.0],
-      "solar": [1450.0],
-      "pumped": [120.0],
-      "biomass": [260.0],
-      "other": [40.0]
-    }
-  },
-  "load": {
-    "t": [1786285800],
-    "mw": [4920.0]
-  },
-  "physicalFlow": {
-    "t": [1786285800],
-    "netMw": [310.0],
-    "borders": {
-      "CZtoAT": [100.0],
-      "DEtoAT": [220.0],
-      "HUtoAT": [-80.0],
-      "ITtoAT": [30.0],
-      "SItoAT": [25.0],
-      "CHtoAT": [15.0]
-    }
-  }
-}
-```
-
-The numeric values above are illustrative only; the production fetcher should always use APG values.
+The proxy stays close to APG's normalized time-series representation. Schema 4
+contains `generation`, `load`, `borders`, `generationForecast` and
+`loadForecast`, each with APG's `ValueColumns` and `ValueRows`, plus fetch-time
+metadata. This lets the overlay and nowcast share the same parser.
 
 ## Fetch cadence
 
@@ -108,12 +75,12 @@ The GitHub Pages build can remain every 30 minutes. If APG later proves consiste
 
 The proxy should be deliberately boring:
 
-1. Fetch `AGPT`, `AL`, and `CBPF`.
-2. Parse and validate all three.
-3. Find the newest complete common timestamp.
-4. Reject malformed or implausible data.
-5. Only after all checks pass, atomically replace `latest.json`.
-6. If anything fails, keep serving the previous successful file.
+1. Fetch `AGPT`, `AL`, `CBPF`, `DAFTG` and `ALF/DALF`.
+2. Parse and validate all five, rejecting malformed data.
+3. Only after every fetch succeeds, atomically replace `latest.json`.
+4. Build the current supply estimate from that cache.
+5. Store it, score newly available actual intervals, and atomically export JSON.
+6. If a stage fails, keep serving that stage's previous successful file.
 
 This gives two independent fallbacks:
 
@@ -126,9 +93,9 @@ The workload is tiny. The host only needs:
 
 - outbound HTTPS access to `transparency.apg.at`;
 - a scheduler capable of running every 15 minutes;
-- static HTTPS hosting for one JSON file;
-- enough disk for a few kilobytes;
-- no inbound admin API and no persistent database.
+- static HTTPS hosting for the JSON exports;
+- enough disk for the cache and the small SQLite history;
+- no inbound admin API.
 
 A small EU VPS, a serverless/edge platform with scheduled jobs, or an existing always-on machine are all sufficient. Before choosing a provider, first run the same Swagger probe from that environment. The key requirement is proven APG reachability, not compute capacity.
 
@@ -142,17 +109,15 @@ The cached endpoint can be public because it contains only public APG transparen
 - avoid exposing arbitrary upstream URL proxying;
 - only serve the single normalized dataset.
 
-## Integration back into this repository
+## Integration into this repository
 
-Once a reachable cache URL exists:
-
-1. Add an environment variable such as `APG_CACHE_URL` to the workflow.
-2. Add a small fetch step that writes the cached JSON to a temporary file.
-3. Update `overlay_apg.py` so it can read either live APG or the normalized cache file.
-4. Keep Energy-Charts as the fallback path.
-5. Log `APG cache age`, `Energy-Charts age`, and the selected source on every build.
-6. After several days, compare median and p95 freshness before deciding whether the proxy is worth keeping permanently.
+GitHub Actions reads the VPS cache first and retains Deno as an overlay-only
+fallback. It logs source, schema, age and row counts, overlays the fresh actual
+tail, then mirrors the VPS nowcast exports into Pages. Energy-Charts remains the
+fallback whenever the cache is unavailable or incomplete.
 
 ## Current repository state
 
-The live APG overlay remains in `scripts/overlay_apg.py` and the connectivity diagnostic remains in `scripts/run_apg_overlay.py` for manual testing. The production Pages workflow does not call them while GitHub-hosted runners are known to time out reaching APG.
+The production workflow uses `scripts/run_apg_cache_overlay.py`. Direct APG
+access remains available for local diagnostics, since GitHub-hosted runners
+still cannot reliably reach APG.

@@ -26,7 +26,8 @@ HISTORY_URL = os.environ.get(
 )
 MAX_PREDICTIONS = 14 * 24 * 4
 MODELS = ("persistence", "rawForecast", "corrected", "totalTrend")
-METRICS = ("generationMw", "wind", "solar")
+GROUP_METRICS = ("hydro", "fossil", "wind", "solar", "pumped", "biomass", "other")
+METRICS = ("generationMw", "loadMw", "netImportMw", *GROUP_METRICS)
 
 
 def empty_history() -> dict:
@@ -78,8 +79,16 @@ def compact_model(model: dict) -> dict:
     groups = model["groups"]
     return {
         "generationMw": round(float(model["generationMw"]), 1),
-        "wind": round(float(groups["wind"]), 1),
-        "solar": round(float(groups["solar"]), 1),
+        **{
+            metric: round(float(groups[metric]), 1)
+            for metric in GROUP_METRICS
+            if metric in groups
+        },
+        **{
+            metric: round(float(model[metric]), 1)
+            for metric in ("loadMw", "netImportMw")
+            if metric in model
+        },
     }
 
 
@@ -98,6 +107,8 @@ def prediction_from_nowcast(nowcast: dict) -> dict:
 
 def score_pending(history: dict, cached: dict) -> int:
     actual_series = overlay_apg.parse(cached["generation"])
+    actual_load = overlay_apg.parse(cached["load"])
+    actual_borders = overlay_apg.parse(cached["borders"])
     newly_scored = 0
     now = int(datetime.now(timezone.utc).timestamp())
     for prediction in history["predictions"]:
@@ -108,12 +119,21 @@ def score_pending(history: dict, cached: dict) -> int:
         if row is None:
             continue
         groups = actual_groups(row)
-        if groups is None:
+        load_row = actual_load.get(target)
+        border_row = actual_borders.get(target)
+        if (
+            groups is None
+            or load_row is None
+            or load_row.get("AL") is None
+            or border_row is None
+            or border_row.get("Sum") is None
+        ):
             continue
         actual = {
             "generationMw": round(sum(groups.values()), 1),
-            "wind": round(groups["wind"], 1),
-            "solar": round(groups["solar"], 1),
+            "loadMw": round(float(load_row["AL"]), 1),
+            "netImportMw": round(float(border_row["Sum"]), 1),
+            **{metric: round(groups[metric], 1) for metric in GROUP_METRICS},
         }
         errors = {}
         for model_name in MODELS:
@@ -123,6 +143,7 @@ def score_pending(history: dict, cached: dict) -> int:
             errors[model_name] = {
                 metric: round(float(model[metric]) - actual[metric], 1)
                 for metric in METRICS
+                if metric in model and metric in actual
             }
         prediction["actual"] = actual
         prediction["errors"] = errors

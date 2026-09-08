@@ -1,6 +1,6 @@
 /* Woher kommt der Strom? — Austrian grid mix.
-   No dependencies. All numbers are precomputed by scripts/fetch_data.py;
-   this file only draws them. */
+   No dependencies. The build precomputes the published-data panels; this file
+   also turns the live nowcast into the three supply-mix views. */
 
 'use strict';
 
@@ -40,6 +40,13 @@ const I18N = {
     title: 'Woher kommt der Strom?',
     sub: 'Österreichs Erzeugungsmix, Tagesverlauf und Grenzflüsse — aus offenen Daten.',
     mixTitle: 'Woher der Strom gerade kommt',
+    mixEstimateTitle: 'Geschätzter Strommix für jetzt',
+    mixDayTitle: 'Strommix der letzten 24 Stunden',
+    mixNow: 'Jetzt',
+    mixEstimate: 'Schätzung',
+    mixDay: '24 h',
+    mixEstimateStamp: 'Modellstand {target} · letzter offizieller Messwert {anchor}',
+    mixDayStamp: 'Gleitender 24-Stunden-Mittelwert bis {time}',
     dayTitle: 'Versorgung nach Quelle',
     cleanScoreTitle: 'Saubere Versorgung · 24 Stunden',
     compareTitle: 'Heute im Vergleich',
@@ -122,13 +129,6 @@ const I18N = {
     importing: 'Import nach Österreich',
     exporting: 'Export aus Österreich',
     generation: 'Erzeugung',
-    nowcastTitle: 'Schätzung für jetzt',
-    estimated: 'Geschätzt',
-    estimatedGeneration: 'Erzeugung',
-    estimatedWind: 'Wind',
-    estimatedSolar: 'Photovoltaik',
-    basedOnOfficial: 'letzter offizieller Wert: {time}',
-    nowcastNote: 'Modellschätzung für den aktuellen Viertelstundenwert. Wind und Photovoltaik folgen den APG-Prognosen; die übrigen Erzeugungsarten werden vom letzten offiziellen Messpunkt übernommen. Die offiziellen Werte auf der Seite bleiben unverändert.',
     load: 'Last',
     renew: 'Erneuerbaren-Anteil',
     price: 'Day-Ahead-Preis',
@@ -143,6 +143,8 @@ const I18N = {
     asOf: 'Stand',
     lag: 'Daten rund {h} alt',
     mixNote: 'Der äußere Ring zeigt die Quelle, der innere die Herkunft: inländische Erzeugung plus positive Nettoimporte ergeben 100 % des Stroms, der in diesem Moment zur Verfügung steht. Bei Nettoexport gibt es keinen Importanteil. Die schraffierten Segmente sind importiert und geschätzt — der Importmix ist eine Zurechnung (siehe unten) und wird hier anteilig auf den Nettoimport umgelegt. Pumpspeicher zählt als Erzeugung: die Energie zum Hochpumpen stammt aus einem früheren Zeitpunkt.',
+    mixEstimateNote: 'Modellschätzung, nicht Messwert: Wind und Photovoltaik folgen bias-korrigierten APG-Prognosen. Die APG-Gesamtprognose bestimmt die inländische Erzeugung; der Rest wird im zuletzt beobachteten Verhältnis auf Wasser, Pumpspeicher und Fossil verteilt. Biomasse und Sonstige bleiben konstant. Der Nettoimport folgt der prognostizierten Last-Erzeugungs-Bilanz; sein Erzeugungsmix wird wie beim Messwert zugerechnet.',
+    mixDayNote: 'Gleitender Mittelwert der letzten 24 Stunden. Inländische Erzeugung und positive Nettoimporte werden über alle Viertelstunden gemittelt; der Importmix ist eine Zurechnung aus dem Herkunftsland, keine Flussverfolgung.',
     dayNote: 'Die Flächen sind die inländische Erzeugung, die kräftige Linie ist die Last. Liegt die Linie unter den Flächen, exportiert Österreich mehr, als es importiert.',
     domesticLabel: 'Inländische Erzeugung',
     importedLabel: 'Importiert · geschätzt',
@@ -158,6 +160,13 @@ const I18N = {
     title: 'Where does the power come from?',
     sub: "Austria's generation mix, daily shape and cross-border flows — from open data.",
     mixTitle: 'Where the power is coming from right now',
+    mixEstimateTitle: 'Estimated power mix right now',
+    mixDayTitle: 'Power mix over the last 24 hours',
+    mixNow: 'Now',
+    mixEstimate: 'Estimate',
+    mixDay: '24 h',
+    mixEstimateStamp: 'Model time {target} · latest official measurement {anchor}',
+    mixDayStamp: 'Rolling 24-hour average through {time}',
     dayTitle: 'Supply by source',
     cleanScoreTitle: 'Clean supply · 24 hours',
     compareTitle: 'Today in context',
@@ -240,13 +249,6 @@ const I18N = {
     importing: 'Importing into Austria',
     exporting: 'Exporting from Austria',
     generation: 'Generation',
-    nowcastTitle: 'Estimate for now',
-    estimated: 'Estimated',
-    estimatedGeneration: 'Generation',
-    estimatedWind: 'Wind',
-    estimatedSolar: 'Solar',
-    basedOnOfficial: 'last official value: {time}',
-    nowcastNote: 'Model estimate for the current quarter-hour. Wind and solar follow the APG forecasts; the other generation sources are carried forward from the latest official measurement. The official values on this page remain unchanged.',
     load: 'Load',
     renew: 'Renewable share',
     price: 'Day-ahead price',
@@ -261,6 +263,8 @@ const I18N = {
     asOf: 'As of',
     lag: 'data about {h} old',
     mixNote: 'The outer ring is the source, the inner ring the origin: domestic generation plus positive net imports make up 100% of the electricity available at that moment. During net export, the import share is zero. Hatched segments are imported and estimated — the import mix is an attribution (see below), scaled here onto the net import figure. Pumped storage counts as generation: the energy used to pump the water uphill came from an earlier moment.',
+    mixEstimateNote: 'Model estimate, not a measurement: wind and solar use bias-corrected APG forecasts. APG’s total forecast sets domestic generation; the residual is split between hydro, pumped storage and fossil generation in their latest observed proportions. Biomass and other stay constant. Net imports follow the forecast load-generation balance; their generation mix is attributed in the same way as for the official view.',
+    mixDayNote: 'Rolling average over the last 24 hours. Domestic generation and positive net imports are averaged across all quarter-hours; the import mix is attributed from the exporting country rather than flow-traced.',
     dayNote: 'The areas are domestic generation; the heavy line is load. Where the line sits below the areas, Austria is exporting more than it imports.',
     domesticLabel: 'Domestic generation',
     importedLabel: 'Imported · estimated',
@@ -277,6 +281,7 @@ const I18N = {
 let LANG = (localStorage.getItem('lang') || (navigator.language || '').slice(0, 2)) === 'en' ? 'en' : 'de';
 let DATA = null;
 let NOWCAST = null;
+let MIX_VIEW = 'now';
 let DAY_RANGE = 'day';
 const t = k => I18N[LANG][k];
 const label = g => LANG === 'de' ? g.de : g.en;
@@ -435,12 +440,13 @@ function renderTiles() {
   }
 }
 
-/* ── current-generation estimate ─────────────────────────────────────── */
+/* ── supply-mix views ────────────────────────────────────────────────── */
 
 function validNowcast(value) {
   if (!value || value.schemaVersion !== 2 || !value.groups) return false;
   const numbers = [value.generatedAt, value.anchorAt, value.targetAt,
-    value.generationMw, value.groups.wind, value.groups.solar];
+    value.generationMw, value.loadMw, value.netImportMw,
+    ...ORDER.map(key => value.groups[key])];
   if (!numbers.every(Number.isFinite)) return false;
 
   // A stale estimate is more misleading than no estimate. The VPS normally
@@ -451,34 +457,71 @@ function validNowcast(value) {
     && value.targetAt - now <= 30 * 60;
 }
 
-function renderNowcast() {
-  const section = document.getElementById('nowcast');
-  if (!validNowcast(NOWCAST)) {
-    section.hidden = true;
-    return;
+function groupMeta(key) {
+  const group = DATA.groups.find(item => item.key === key)
+    || (DATA.importMix && DATA.importMix.groups.find(item => item.key === key));
+  return group
+    ? { key, de: group.de, en: group.en }
+    : { key, de: key, en: key };
+}
+
+function supplyMix(groupValues, netImport) {
+  const domestic = ORDER.map(key => ({ ...groupMeta(key), mw: Math.max(0, groupValues[key] || 0) }))
+    .filter(group => group.mw > 0);
+  const domesticMw = domestic.reduce((sum, group) => sum + group.mw, 0);
+  const importedMw = Math.max(0, netImport || 0);
+  const supplyMw = domesticMw + importedMw;
+  if (supplyMw <= 0) return null;
+
+  for (const group of domestic) group.pct = 100 * group.mw / supplyMw;
+  const imported = [];
+  const importMix = DATA.importMix;
+  const importTotal = importMix ? Number(importMix.total) : 0;
+  if (importedMw > 0 && importMix && importTotal > 0) {
+    for (const source of importMix.groups) {
+      const mw = importedMw * Number(source.mw || 0) / importTotal;
+      if (mw > 0) imported.push({
+        key: source.key, de: source.de, en: source.en,
+        mw, pct: 100 * mw / supplyMw,
+      });
+    }
+  } else if (importedMw > 0) {
+    imported.push({
+      key: 'import', de: 'Import', en: 'Import', mw: importedMw,
+      pct: 100 * importedMw / supplyMw,
+    });
   }
 
-  const target = dateFmt().format(new Date(NOWCAST.targetAt * 1000));
-  const anchor = dateFmt().format(new Date(NOWCAST.anchorAt * 1000));
-  const stamp = document.getElementById('nowcastStamp');
-  stamp.textContent = '';
-  stamp.append(el('span', 'dot estimate-dot'), document.createTextNode(
-    `${t('asOf')} ${target} · ${t('basedOnOfficial').replace('{time}', anchor)}`));
+  return {
+    supplyMw, domesticMw, importedMw,
+    domesticPct: 100 * domesticMw / supplyMw,
+    importedPct: 100 * importedMw / supplyMw,
+    domestic, imported,
+  };
+}
 
-  const values = [
-    { label: t('estimatedGeneration'), value: NOWCAST.generationMw, color: 'generation' },
-    { label: t('estimatedWind'), value: NOWCAST.groups.wind, color: 'wind' },
-    { label: t('estimatedSolar'), value: NOWCAST.groups.solar, color: 'solar' },
-  ];
-  const box = document.getElementById('nowcastValues');
-  box.textContent = '';
-  for (const item of values) {
-    const card = el('div', `nowcast-value ${item.color}`);
-    card.append(el('div', 'k', item.label),
-      el('div', 'v', `${nf(item.value)}<small>MW</small>`));
-    box.append(card);
+function lastDaySupplyMix() {
+  const groups = orderedGroups();
+  const indices = DATA.day.t.map((_, index) => index).filter(index =>
+    Number.isFinite(DATA.day.netImport[index])
+      && groups.every(group => Number.isFinite(group.series[index])));
+  if (!indices.length) return null;
+
+  const values = {};
+  for (const group of groups) {
+    values[group.key] = indices.reduce((sum, index) => sum + group.series[index], 0)
+      / indices.length;
   }
-  section.hidden = false;
+  const averageImport = indices.reduce(
+    (sum, index) => sum + Math.max(0, DATA.day.netImport[index]), 0) / indices.length;
+  return supplyMix(values, averageImport);
+}
+
+function renderMixButtons() {
+  for (const button of document.querySelectorAll('#mixButtons button')) {
+    button.disabled = button.dataset.mix === 'estimate' && !validNowcast(NOWCAST);
+    button.setAttribute('aria-pressed', button.dataset.mix === MIX_VIEW ? 'true' : 'false');
+  }
 }
 
 /* ── the mix ──────────────────────────────────────────────────────────── */
@@ -532,8 +575,36 @@ function hatchPattern(key) {
 }
 
 function renderMix() {
-  const mix = DATA.supplyMix;
+  if (MIX_VIEW === 'estimate' && !validNowcast(NOWCAST)) MIX_VIEW = 'now';
+  const mix = MIX_VIEW === 'estimate'
+    ? supplyMix(NOWCAST.groups, NOWCAST.netImportMw)
+    : MIX_VIEW === 'day' ? lastDaySupplyMix() : DATA.supplyMix;
   if (!mix) return;
+
+  const titleKey = MIX_VIEW === 'estimate' ? 'mixEstimateTitle'
+    : MIX_VIEW === 'day' ? 'mixDayTitle' : 'mixTitle';
+  const noteKey = MIX_VIEW === 'estimate' ? 'mixEstimateNote'
+    : MIX_VIEW === 'day' ? 'mixDayNote' : 'mixNote';
+  const title = t(titleKey);
+  document.getElementById('mixTitle').textContent = title;
+  document.getElementById('mixNote').textContent = t(noteKey);
+  document.getElementById('cleanScoreBlock').hidden = MIX_VIEW !== 'day';
+  renderMixButtons();
+
+  const stamp = document.getElementById('mixStamp');
+  if (MIX_VIEW === 'now') {
+    renderPanelStamp('mixStamp', DATA.dataAt);
+  } else {
+    const text = MIX_VIEW === 'estimate'
+      ? t('mixEstimateStamp')
+        .replace('{target}', dateFmt().format(new Date(NOWCAST.targetAt * 1000)))
+        .replace('{anchor}', dateFmt().format(new Date(NOWCAST.anchorAt * 1000)))
+      : t('mixDayStamp').replace('{time}', dateFmt().format(
+        new Date(DATA.day.t[DATA.day.t.length - 1] * 1000)));
+    stamp.textContent = '';
+    stamp.append(el('span', MIX_VIEW === 'estimate' ? 'dot estimate-dot' : 'dot'),
+      document.createTextNode(text));
+  }
 
   const domestic = ORDER.map(k => mix.domestic.find(g => g.key === k)).filter(Boolean);
   const imported = IMP_ORDER.map(k => mix.imported.find(g => g.key === k))
@@ -544,7 +615,7 @@ function renderMix() {
     ...imported.map(g => ({ ...g, imported: true })),
   ];
 
-  drawMixDonut(mix, segments);
+  drawMixDonut(mix, segments, title);
 
   const leg = document.getElementById('legend');
   const impLeg = document.getElementById('importedLegend');
@@ -570,19 +641,19 @@ function renderMix() {
   const row = s => `<tr><td>${label(s)}${s.imported ? ` · ${t('imported')}` : ''}</td>` +
     `<td class="n">${nf(s.mw)}</td><td class="n">${nf(s.pct, 1)}</td></tr>`;
   document.getElementById('mixTable').innerHTML =
-    `<table><caption>${t('mixTitle')} — ${dateFmt().format(new Date(DATA.dataAt * 1000))}</caption>
+    `<table><caption>${title}</caption>
      <thead><tr><th>${t('source')}</th><th class="n">MW</th><th class="n">${t('share')} %</th></tr></thead>
      <tbody>${[...segments].sort((a, b) => b.mw - a.mw).map(row).join('')}
      <tr><td><strong>${t('total')}</strong></td><td class="n"><strong>${nf(mix.supplyMw)}</strong></td><td class="n">100</td></tr></tbody></table>`;
 }
 
-function drawMixDonut(mix, segments) {
+function drawMixDonut(mix, segments, title) {
   const svg = document.getElementById('mixDonut');
   const S = 320, c = S / 2;
   svg.setAttribute('viewBox', `0 0 ${S} ${S}`);
   svg.textContent = '';
   svg.setAttribute('aria-label',
-    `${t('mixTitle')} — ${segments.map(s => `${label(s)} ${nf(s.pct, 1)} %`).join(', ')}`);
+    `${title} — ${segments.map(s => `${label(s)} ${nf(s.pct, 1)} %`).join(', ')}`);
 
   const defs = svgEl('defs', {});
   for (const s of segments) if (s.imported) defs.append(hatchPattern(s.key));
@@ -1794,7 +1865,6 @@ function renderAll() {
   document.getElementById('lang').textContent = LANG === 'de' ? 'EN' : 'DE';
   renderStamp();
   renderTiles();
-  renderNowcast();
   renderMix();
   renderCleanScore();
   renderRangeButtons();
@@ -1841,6 +1911,13 @@ document.getElementById('traceButtons').addEventListener('click', event => {
   renderTrace();
 });
 
+document.getElementById('mixButtons').addEventListener('click', event => {
+  const button = event.target.closest('button[data-mix]');
+  if (!button || button.disabled) return;
+  MIX_VIEW = button.dataset.mix;
+  renderMix();
+});
+
 document.getElementById('rangeButtons').addEventListener('click', event => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
@@ -1877,7 +1954,7 @@ fetch('data.json?' + Date.now())
       .then(d => {
         if (!validNowcast(d)) throw new Error('stale or invalid estimate');
         NOWCAST = d;
-        renderNowcast();
+        renderMix();
       })
       .catch(e => {
         if (index + 1 < nowcastSources.length) return loadNowcast(index + 1);
